@@ -1,0 +1,6 @@
+{
+  "name": "workspaces-mcp-merge",
+  "workspaces": [
+    "packages/*"
+  ]
+}

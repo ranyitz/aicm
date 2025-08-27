@@ -1,0 +1,9 @@
+{
+  "rulesDir": "./rules",
+  "targets": ["cursor"],
+  "mcpServers": {
+    "backend-server": {
+      "command": "./scripts/backend.sh"
+    }
+  }
+}

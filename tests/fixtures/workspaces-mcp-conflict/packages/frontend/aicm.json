@@ -1,0 +1,9 @@
+{
+  "rulesDir": "./rules",
+  "targets": ["cursor"],
+  "mcpServers": {
+    "shared-server": {
+      "command": "./scripts/frontend.sh"
+    }
+  }
+}

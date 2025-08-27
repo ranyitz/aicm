@@ -351,6 +351,55 @@ function writeMcpServersToFile(mcpServers: MCPServers, mcpPath: string): void {
 }
 
 /**
+ * Merge MCP server configurations from multiple packages
+ * Later packages in alphabetical order override earlier ones
+ */
+function mergeWorkspaceMcpServers(
+  packages: Array<{ relativePath: string; config: ResolvedConfig }>,
+): MCPServers {
+  const merged: MCPServers = {};
+  const seen: Record<
+    string,
+    { configStr: string; packages: string[]; chosen: string }
+  > = {};
+
+  for (const pkg of packages) {
+    const mcpServers = pkg.config.mcpServers;
+    if (!mcpServers) continue;
+
+    for (const [key, value] of Object.entries(mcpServers)) {
+      const configStr = JSON.stringify(value);
+
+      if (!Object.prototype.hasOwnProperty.call(seen, key)) {
+        merged[key] = value;
+        seen[key] = {
+          configStr,
+          packages: [pkg.relativePath],
+          chosen: pkg.relativePath,
+        };
+      } else if (seen[key].configStr !== configStr) {
+        seen[key].packages.push(pkg.relativePath);
+        seen[key].configStr = configStr;
+        seen[key].chosen = pkg.relativePath;
+        merged[key] = value;
+
+        console.warn(
+          `Warning: MCP configuration conflict detected\n` +
+            `  Key: "${key}"\n` +
+            `  Packages: ${seen[key].packages.join(", ")}\n` +
+            `  Using configuration from: ${pkg.relativePath}`,
+        );
+      } else {
+        // Same configuration; just record the package
+        seen[key].packages.push(pkg.relativePath);
+      }
+    }
+  }
+
+  return merged;
+}
+
+/**
  * Discover all packages with aicm configurations using git ls-files
  */
 function findAicmFiles(rootDir: string): string[] {
@@ -603,6 +652,13 @@ async function installWorkspaces(
       verbose,
       dryRun,
     });
+
+    // Merge MCP servers from all packages into root configuration
+    const mergedMcpServers = mergeWorkspaceMcpServers(allPackages);
+    if (!dryRun && Object.keys(mergedMcpServers).length > 0) {
+      const rootMcpPath = path.join(cwd, ".cursor", "mcp.json");
+      writeMcpServersToFile(mergedMcpServers, rootMcpPath);
+    }
 
     if (verbose) {
       result.packages.forEach((pkg) => {

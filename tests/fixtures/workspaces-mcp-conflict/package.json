@@ -1,0 +1,6 @@
+{
+  "name": "workspaces-mcp-conflict",
+  "workspaces": [
+    "packages/*"
+  ]
+}

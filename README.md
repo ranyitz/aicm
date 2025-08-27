@@ -160,6 +160,7 @@ aicm automatically detects workspaces if your `package.json` contains a `workspa
 
 1. **Discover packages**: Automatically find all directories containing `aicm.json` files in your repository
 2. **Install per package**: Install rules and MCPs for each package individually in their respective directories
+3. **Merge MCP configs**: Create a merged `.cursor/mcp.json` at the repository root containing all workspace MCP servers
 
 ### How It Works
 
@@ -209,6 +210,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 ### MCP Server Installation
 
 - **Cursor**: MCP server configs are written to `.cursor/mcp.json`.
+- In workspaces mode, an additional merged `.cursor/mcp.json` is generated at the repository root so all servers are available when opening the monorepo.
 
 ## Supported Targets
 

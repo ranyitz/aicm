@@ -559,3 +559,49 @@ test("allow empty root config in workspace mode", async () => {
   expect(rootConfig.presets).toBeUndefined();
   expect(rootConfig.workspaces).toBe(true);
 });
+
+test("merge mcp servers from workspace packages into root", async () => {
+  await setupFromFixture("workspaces-mcp-merge");
+
+  const { code } = await runCommand("install --ci");
+  expect(code).toBe(0);
+
+  const rootMcpPath = path.join(".cursor", "mcp.json");
+  expect(fileExists(rootMcpPath)).toBe(true);
+  const rootMcp = JSON.parse(readTestFile(rootMcpPath));
+  expect(rootMcp.mcpServers["frontend-server"]).toMatchObject({
+    command: "./scripts/frontend.sh",
+    aicm: true,
+  });
+  expect(rootMcp.mcpServers["backend-server"]).toMatchObject({
+    command: "./scripts/backend.sh",
+    aicm: true,
+  });
+
+  const frontendMcp = JSON.parse(
+    readTestFile(path.join("packages", "frontend", ".cursor", "mcp.json")),
+  );
+  expect(frontendMcp.mcpServers["frontend-server"]).toBeDefined();
+  expect(frontendMcp.mcpServers["backend-server"]).toBeUndefined();
+
+  const backendMcp = JSON.parse(
+    readTestFile(path.join("packages", "backend", ".cursor", "mcp.json")),
+  );
+  expect(backendMcp.mcpServers["backend-server"]).toBeDefined();
+  expect(backendMcp.mcpServers["frontend-server"]).toBeUndefined();
+});
+
+test("warn on conflicting mcp servers and merge deterministically", async () => {
+  await setupFromFixture("workspaces-mcp-conflict");
+
+  const { stderr, code } = await runCommand("install --ci --verbose");
+  expect(code).toBe(0);
+  expect(stderr).toContain("Warning: MCP configuration conflict detected");
+  expect(stderr).toContain('Key: "shared-server"');
+
+  const rootMcp = JSON.parse(readTestFile(path.join(".cursor", "mcp.json")));
+  expect(rootMcp.mcpServers["shared-server"]).toMatchObject({
+    command: "./scripts/frontend.sh",
+    aicm: true,
+  });
+});
