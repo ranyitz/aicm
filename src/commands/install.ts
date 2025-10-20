@@ -107,7 +107,7 @@ function writeCursorCommands(
   commands: CommandFile[],
   cursorCommandsDir: string,
 ): void {
-  fs.emptyDirSync(cursorCommandsDir);
+  fs.removeSync(cursorCommandsDir);
 
   for (const command of commands) {
     const commandNameParts = command.name
@@ -224,30 +224,6 @@ function writeRulesToTargets(
   }
 }
 
-function removeEmptyDirectories(directory: string, stopAt: string): void {
-  let current = directory;
-
-  while (current.startsWith(stopAt)) {
-    if (!fs.existsSync(current)) {
-      current = path.dirname(current);
-      continue;
-    }
-
-    const entries = fs.readdirSync(current);
-    if (entries.length > 0) {
-      break;
-    }
-
-    fs.rmdirSync(current);
-
-    if (current === stopAt) {
-      break;
-    }
-
-    current = path.dirname(current);
-  }
-}
-
 function writeCommandsToTargets(
   commands: CommandFile[],
   targets: SupportedTarget[],
@@ -259,74 +235,50 @@ function writeCommandsToTargets(
     if (target === "cursor") {
       const commandsDir = path.join(cursorRoot, "commands", "aicm");
 
-      if (commands.length === 0) {
-        if (fs.existsSync(commandsDir)) {
-          fs.removeSync(commandsDir);
-          removeEmptyDirectories(path.dirname(commandsDir), cursorRoot);
-        }
-      } else {
-        writeCursorCommands(commands, commandsDir);
-      }
+      writeCursorCommands(commands, commandsDir);
     }
     // Other targets do not support commands yet
   }
 }
 
 function warnPresetCommandCollisions(commands: CommandFile[]): void {
-  if (commands.length === 0) {
-    return;
-  }
-
   const collisions = new Map<
     string,
-    { presets: Set<string>; chosen: CommandFile | null }
+    { presets: Set<string>; lastPreset: string }
   >();
 
   for (const command of commands) {
-    if (!command.presetName) {
-      continue;
-    }
+    if (!command.presetName) continue;
 
-    if (!collisions.has(command.name)) {
+    const entry = collisions.get(command.name);
+    if (entry) {
+      entry.presets.add(command.presetName);
+      entry.lastPreset = command.presetName;
+    } else {
       collisions.set(command.name, {
         presets: new Set([command.presetName]),
-        chosen: command,
+        lastPreset: command.presetName,
       });
-      continue;
     }
-
-    const entry = collisions.get(command.name)!;
-    entry.presets.add(command.presetName);
-    entry.chosen = command;
   }
 
-  for (const [commandName, { presets, chosen }] of collisions.entries()) {
-    if (presets.size <= 1 || !chosen?.presetName) {
-      continue;
+  for (const [commandName, { presets, lastPreset }] of collisions) {
+    if (presets.size > 1) {
+      const presetList = Array.from(presets).sort().join(", ");
+      console.warn(
+        chalk.yellow(
+          `Warning: multiple presets provide the "${commandName}" command (${presetList}). Using definition from ${lastPreset}.`,
+        ),
+      );
     }
-
-    const presetList = Array.from(presets).sort().join(", ");
-    const chosenPreset = chosen.presetName;
-
-    console.warn(
-      chalk.yellow(
-        `Warning: multiple presets provide the "${commandName}" command (${presetList}). Using definition from ${chosenPreset}.`,
-      ),
-    );
   }
 }
 
 function dedupeCommandsForInstall(commands: CommandFile[]): CommandFile[] {
-  if (commands.length <= 1) {
-    return commands;
-  }
-
   const unique = new Map<string, CommandFile>();
-
   for (const command of commands) {
     unique.set(command.name, command);
   }
-
   return Array.from(unique.values());
 }
 
@@ -552,16 +504,13 @@ export async function installPackage(
 
     try {
       if (!options.dryRun) {
-        // Write rules to targets
         writeRulesToTargets(rules, config.targets as SupportedTarget[]);
 
-        // Write commands to targets
         writeCommandsToTargets(
           commandsToInstall,
           config.targets as SupportedTarget[],
         );
 
-        // Write MCP servers
         if (mcpServers && Object.keys(mcpServers).length > 0) {
           writeMcpServersToTargets(
             mcpServers,

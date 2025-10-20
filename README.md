@@ -118,7 +118,6 @@ Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appe
 Presets can ship reusable command libraries in addition to rules:
 
 ```json
-// @team/dev-preset/aicm.json
 {
   "rulesDir": "rules",
   "commandsDir": "commands"
@@ -267,7 +266,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 ```
 
 - **rulesDir**: Directory containing all rule files.
-- **commandsDir**: Directory containing Cursor command files (`.md`).
+- **commandsDir**: Directory containing Cursor command files.
 - **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`.
 - **presets**: List of preset packages or paths to include.
 - **overrides**: Map of rule names to `false` (disable) or a replacement file path.
