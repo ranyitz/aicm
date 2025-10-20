@@ -279,14 +279,16 @@ export function getDirectoryStructure(
     const itemPath = path.join(targetDir, item);
     const relativePath = path.relative(workingDir, itemPath);
 
+    const normalizedPath = relativePath.split(path.sep).join("/");
+
     if (fs.statSync(itemPath).isDirectory()) {
-      result.push(`${relativePath}/`);
+      result.push(`${normalizedPath}/`);
 
       // Get nested items
       const nestedItems = getDirectoryStructure(relativePath, testDirOverride);
       result.push(...nestedItems);
     } else {
-      result.push(relativePath);
+      result.push(normalizedPath);
     }
   }
 
