@@ -1,0 +1,7 @@
+{
+  "presets": ["./preset"],
+  "overrides": {
+    "replace": "./overrides/replace.md",
+    "deprecated": false
+  }
+}
