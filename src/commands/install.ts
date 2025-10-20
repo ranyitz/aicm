@@ -853,14 +853,21 @@ export async function installCommand(
   } else {
     const ruleCount = result.installedRuleCount;
     const commandCount = result.installedCommandCount;
-    const ruleMessage = `${ruleCount} rule${ruleCount === 1 ? "" : "s"}`;
+    const ruleMessage =
+      ruleCount > 0 ? `${ruleCount} rule${ruleCount === 1 ? "" : "s"}` : null;
     const commandMessage =
       commandCount > 0
         ? `${commandCount} command${commandCount === 1 ? "" : "s"}`
         : null;
-    const countsMessage = commandMessage
-      ? `${ruleMessage} and ${commandMessage}`
-      : ruleMessage;
+    const countsParts: string[] = [];
+    if (ruleMessage) {
+      countsParts.push(ruleMessage);
+    }
+    if (commandMessage) {
+      countsParts.push(commandMessage);
+    }
+    const countsMessage =
+      countsParts.length > 0 ? countsParts.join(" and ") : "0 rules";
 
     if (dryRun) {
       if (result.packagesCount > 1) {
