@@ -224,18 +224,46 @@ function writeRulesToTargets(
   }
 }
 
+function removeEmptyDirectories(directory: string, stopAt: string): void {
+  let current = directory;
+
+  while (current.startsWith(stopAt)) {
+    if (!fs.existsSync(current)) {
+      current = path.dirname(current);
+      continue;
+    }
+
+    const entries = fs.readdirSync(current);
+    if (entries.length > 0) {
+      break;
+    }
+
+    fs.rmdirSync(current);
+
+    if (current === stopAt) {
+      break;
+    }
+
+    current = path.dirname(current);
+  }
+}
+
 function writeCommandsToTargets(
   commands: CommandFile[],
   targets: SupportedTarget[],
 ): void {
   const projectDir = process.cwd();
+  const cursorRoot = path.join(projectDir, ".cursor");
 
   for (const target of targets) {
     if (target === "cursor") {
-      const commandsDir = path.join(projectDir, ".cursor", "commands", "aicm");
+      const commandsDir = path.join(cursorRoot, "commands", "aicm");
 
       if (commands.length === 0) {
-        fs.emptyDirSync(commandsDir);
+        if (fs.existsSync(commandsDir)) {
+          fs.removeSync(commandsDir);
+          removeEmptyDirectories(path.dirname(commandsDir), cursorRoot);
+        }
       } else {
         writeCursorCommands(commands, commandsDir);
       }
@@ -543,10 +571,15 @@ export async function installPackage(
         }
       }
 
+      const uniqueRuleCount = new Set(rules.map((rule) => rule.name)).size;
+      const uniqueCommandCount = new Set(
+        commandsToInstall.map((command) => command.name),
+      ).size;
+
       return {
         success: true,
-        installedRuleCount: rules.length,
-        installedCommandCount: commandsToInstall.length,
+        installedRuleCount: uniqueRuleCount,
+        installedCommandCount: uniqueCommandCount,
         packagesCount: 1,
       };
     } catch (error) {
@@ -716,11 +749,7 @@ async function installWorkspaces(
     if (verbose) {
       result.packages.forEach((pkg) => {
         if (pkg.success) {
-          const summaryParts = [
-            `${pkg.installedRuleCount} rule${
-              pkg.installedRuleCount === 1 ? "" : "s"
-            }`,
-          ];
+          const summaryParts = [`${pkg.installedRuleCount} rules`];
 
           if (pkg.installedCommandCount > 0) {
             summaryParts.push(
@@ -878,7 +907,7 @@ export async function installCommand(
         console.log(`Dry run: validated ${countsMessage}`);
       }
     } else if (ruleCount === 0 && commandCount === 0) {
-      console.log("No rules installed");
+      console.log("No rules or commands installed");
     } else if (result.packagesCount > 1) {
       console.log(
         `Successfully installed ${countsMessage} across ${result.packagesCount} packages`,
