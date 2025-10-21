@@ -1,0 +1,8 @@
+{
+  "name": "commands-workspace",
+  "private": true,
+  "workspaces": [
+    "package-a",
+    "package-b"
+  ]
+}

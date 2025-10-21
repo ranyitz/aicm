@@ -1,0 +1,4 @@
+{
+  "commandsDir": "./commands",
+  "targets": ["cursor"]
+}

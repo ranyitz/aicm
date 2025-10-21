@@ -13,6 +13,7 @@ test("install rules", async () => {
 
   expect(result.success).toBe(true);
   expect(result.installedRuleCount).toBe(1);
+  expect(result.installedCommandCount).toBe(0);
   expect(result.packagesCount).toBe(1);
 
   // Check that rule was installed
@@ -53,6 +54,7 @@ test("handle missing config", async () => {
   expect(result.error).toBeInstanceOf(Error);
   expect(result.error?.message).toBe("Configuration file not found");
   expect(result.installedRuleCount).toBe(0);
+  expect(result.installedCommandCount).toBe(0);
   expect(result.packagesCount).toBe(0);
 });
 
@@ -67,6 +69,7 @@ test("dry run API", async () => {
 
   expect(result.success).toBe(true);
   expect(result.installedRuleCount).toBe(1);
+  expect(result.installedCommandCount).toBe(0);
   expect(result.packagesCount).toBe(1);
 
   const ruleFile = path.join(

@@ -54,7 +54,7 @@ test("no rules prints message", async () => {
   const { stdout, code } = await runCommand("install --ci");
 
   expect(code).toBe(0);
-  expect(stdout).toContain("No rules installed");
+  expect(stdout).toContain("No rules or commands installed");
 });
 
 test("unknown config keys throw error", async () => {
@@ -433,7 +433,7 @@ test("override deleting last rule does not error", async () => {
   const { stdout, code } = await runCommand("install --ci");
 
   expect(code).toBe(0);
-  expect(stdout).toContain("No rules installed");
+  expect(stdout).toContain("No rules or commands installed");
 
   // Rule should not be installed
   expect(
@@ -451,7 +451,7 @@ test("skip installation when skipInstall is true", async () => {
   const { stdout, code } = await runCommand("install --ci");
 
   expect(code).toBe(0);
-  expect(stdout).toContain("No rules installed");
+  expect(stdout).toContain("No rules or commands installed");
 
   // Check that no rules were installed
   expect(fileExists(path.join(".cursor", "rules", "aicm"))).toBe(false);

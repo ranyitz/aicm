@@ -6,6 +6,7 @@ import {
   loadConfig,
   ResolvedConfig,
   RuleFile,
+  CommandFile,
   MCPServers,
   SupportedTarget,
   detectWorkspacesFromPackageJson,
@@ -58,6 +59,10 @@ export interface InstallResult {
    */
   installedRuleCount: number;
   /**
+   * Number of commands installed
+   */
+  installedCommandCount: number;
+  /**
    * Number of packages installed
    */
   packagesCount: number;
@@ -98,6 +103,24 @@ function writeCursorRules(rules: RuleFile[], cursorRulesDir: string): void {
   }
 }
 
+function writeCursorCommands(
+  commands: CommandFile[],
+  cursorCommandsDir: string,
+): void {
+  fs.removeSync(cursorCommandsDir);
+
+  for (const command of commands) {
+    const commandNameParts = command.name
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean);
+    const commandPath = path.join(cursorCommandsDir, ...commandNameParts);
+    const commandFile = commandPath + ".md";
+    fs.ensureDirSync(path.dirname(commandFile));
+    fs.writeFileSync(commandFile, command.content);
+  }
+}
+
 function extractNamespaceFromPresetPath(presetPath: string): string[] {
   // Special case: npm package names always use forward slashes, regardless of platform
   if (presetPath.startsWith("@")) {
@@ -106,7 +129,9 @@ function extractNamespaceFromPresetPath(presetPath: string): string[] {
   }
 
   const parts = presetPath.split(path.sep);
-  return parts.filter((part) => part.length > 0); // Filter out empty segments
+  return parts.filter(
+    (part) => part.length > 0 && part !== "." && part !== "..",
+  );
 }
 
 /**
@@ -197,6 +222,64 @@ function writeRulesToTargets(
         break;
     }
   }
+}
+
+function writeCommandsToTargets(
+  commands: CommandFile[],
+  targets: SupportedTarget[],
+): void {
+  const projectDir = process.cwd();
+  const cursorRoot = path.join(projectDir, ".cursor");
+
+  for (const target of targets) {
+    if (target === "cursor") {
+      const commandsDir = path.join(cursorRoot, "commands", "aicm");
+
+      writeCursorCommands(commands, commandsDir);
+    }
+    // Other targets do not support commands yet
+  }
+}
+
+function warnPresetCommandCollisions(commands: CommandFile[]): void {
+  const collisions = new Map<
+    string,
+    { presets: Set<string>; lastPreset: string }
+  >();
+
+  for (const command of commands) {
+    if (!command.presetName) continue;
+
+    const entry = collisions.get(command.name);
+    if (entry) {
+      entry.presets.add(command.presetName);
+      entry.lastPreset = command.presetName;
+    } else {
+      collisions.set(command.name, {
+        presets: new Set([command.presetName]),
+        lastPreset: command.presetName,
+      });
+    }
+  }
+
+  for (const [commandName, { presets, lastPreset }] of collisions) {
+    if (presets.size > 1) {
+      const presetList = Array.from(presets).sort().join(", ");
+      console.warn(
+        chalk.yellow(
+          `Warning: multiple presets provide the "${commandName}" command (${presetList}). Using definition from ${lastPreset}.`,
+        ),
+      );
+    }
+  }
+}
+
+function dedupeCommandsForInstall(commands: CommandFile[]): CommandFile[] {
+  const unique = new Map<string, CommandFile>();
+  for (const command of commands) {
+    unique.set(command.name, command);
+  }
+  return Array.from(unique.values());
 }
 
 /**
@@ -400,26 +483,34 @@ export async function installPackage(
         success: false,
         error: new Error("Configuration file not found"),
         installedRuleCount: 0,
+        installedCommandCount: 0,
         packagesCount: 0,
       };
     }
 
-    const { config, rules, mcpServers } = resolvedConfig;
+    const { config, rules, commands, mcpServers } = resolvedConfig;
 
     if (config.skipInstall === true) {
       return {
         success: true,
         installedRuleCount: 0,
+        installedCommandCount: 0,
         packagesCount: 0,
       };
     }
 
+    warnPresetCommandCollisions(commands);
+    const commandsToInstall = dedupeCommandsForInstall(commands);
+
     try {
       if (!options.dryRun) {
-        // Write rules to targets
         writeRulesToTargets(rules, config.targets as SupportedTarget[]);
 
-        // Write MCP servers
+        writeCommandsToTargets(
+          commandsToInstall,
+          config.targets as SupportedTarget[],
+        );
+
         if (mcpServers && Object.keys(mcpServers).length > 0) {
           writeMcpServersToTargets(
             mcpServers,
@@ -429,9 +520,15 @@ export async function installPackage(
         }
       }
 
+      const uniqueRuleCount = new Set(rules.map((rule) => rule.name)).size;
+      const uniqueCommandCount = new Set(
+        commandsToInstall.map((command) => command.name),
+      ).size;
+
       return {
         success: true,
-        installedRuleCount: rules.length,
+        installedRuleCount: uniqueRuleCount,
+        installedCommandCount: uniqueCommandCount,
         packagesCount: 1,
       };
     } catch (error) {
@@ -439,6 +536,7 @@ export async function installPackage(
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
         installedRuleCount: 0,
+        installedCommandCount: 0,
         packagesCount: 0,
       };
     }
@@ -462,16 +560,20 @@ async function installWorkspacesPackages(
     success: boolean;
     error?: Error;
     installedRuleCount: number;
+    installedCommandCount: number;
   }>;
   totalRuleCount: number;
+  totalCommandCount: number;
 }> {
   const results: Array<{
     path: string;
     success: boolean;
     error?: Error;
     installedRuleCount: number;
+    installedCommandCount: number;
   }> = [];
   let totalRuleCount = 0;
+  let totalCommandCount = 0;
 
   // Install packages sequentially for now (can be parallelized later)
   for (const pkg of packages) {
@@ -485,12 +587,14 @@ async function installWorkspacesPackages(
       });
 
       totalRuleCount += result.installedRuleCount;
+      totalCommandCount += result.installedCommandCount;
 
       results.push({
         path: pkg.relativePath,
         success: result.success,
         error: result.error,
         installedRuleCount: result.installedRuleCount,
+        installedCommandCount: result.installedCommandCount,
       });
     } catch (error) {
       results.push({
@@ -498,6 +602,7 @@ async function installWorkspacesPackages(
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
         installedRuleCount: 0,
+        installedCommandCount: 0,
       });
     }
   }
@@ -508,6 +613,7 @@ async function installWorkspacesPackages(
     success: failedPackages.length === 0,
     packages: results,
     totalRuleCount,
+    totalCommandCount,
   };
 }
 
@@ -535,11 +641,12 @@ async function installWorkspaces(
       const isRoot = pkg.relativePath === ".";
       if (!isRoot) return true;
 
-      // For root directories, only keep if it has rules or presets
+      // For root directories, only keep if it has rules, commands, or presets
       const hasRules = pkg.config.rules && pkg.config.rules.length > 0;
+      const hasCommands = pkg.config.commands && pkg.config.commands.length > 0;
       const hasPresets =
         pkg.config.config.presets && pkg.config.config.presets.length > 0;
-      return hasRules || hasPresets;
+      return hasRules || hasCommands || hasPresets;
     });
 
     if (packages.length === 0) {
@@ -547,6 +654,7 @@ async function installWorkspaces(
         success: false,
         error: new Error("No packages with aicm configurations found"),
         installedRuleCount: 0,
+        installedCommandCount: 0,
         packagesCount: 0,
       };
     }
@@ -590,8 +698,18 @@ async function installWorkspaces(
     if (verbose) {
       result.packages.forEach((pkg) => {
         if (pkg.success) {
+          const summaryParts = [`${pkg.installedRuleCount} rules`];
+
+          if (pkg.installedCommandCount > 0) {
+            summaryParts.push(
+              `${pkg.installedCommandCount} command${
+                pkg.installedCommandCount === 1 ? "" : "s"
+              }`,
+            );
+          }
+
           console.log(
-            chalk.green(`✅ ${pkg.path} (${pkg.installedRuleCount} rules)`),
+            chalk.green(`✅ ${pkg.path} (${summaryParts.join(", ")})`),
           );
         } else {
           console.log(chalk.red(`❌ ${pkg.path}: ${pkg.error}`));
@@ -604,9 +722,20 @@ async function installWorkspaces(
     if (failedPackages.length > 0) {
       console.log(chalk.yellow(`Installation completed with errors`));
       if (verbose) {
+        const commandSummary =
+          result.totalCommandCount > 0
+            ? `, ${result.totalCommandCount} command${
+                result.totalCommandCount === 1 ? "" : "s"
+              } total`
+            : "";
+
         console.log(
           chalk.green(
-            `Successfully installed: ${result.packages.length - failedPackages.length}/${result.packages.length} packages (${result.totalRuleCount} rules total)`,
+            `Successfully installed: ${
+              result.packages.length - failedPackages.length
+            }/${result.packages.length} packages (${result.totalRuleCount} rule${
+              result.totalRuleCount === 1 ? "" : "s"
+            } total${commandSummary})`,
           ),
         );
         console.log(
@@ -626,6 +755,7 @@ async function installWorkspaces(
           `Package installation failed for ${failedPackages.length} package(s): ${errorDetails}`,
         ),
         installedRuleCount: result.totalRuleCount,
+        installedCommandCount: result.totalCommandCount,
         packagesCount: result.packages.length,
       };
     }
@@ -633,6 +763,7 @@ async function installWorkspaces(
     return {
       success: true,
       installedRuleCount: result.totalRuleCount,
+      installedCommandCount: result.totalCommandCount,
       packagesCount: result.packages.length,
     };
   });
@@ -654,6 +785,7 @@ export async function install(
     return {
       success: true,
       installedRuleCount: 0,
+      installedCommandCount: 0,
       packagesCount: 0,
     };
   }
@@ -697,24 +829,40 @@ export async function installCommand(
   if (!result.success) {
     throw result.error ?? new Error("Installation failed with unknown error");
   } else {
-    const rulesInstalledMessage = `${result.installedRuleCount} rule${result.installedRuleCount === 1 ? "" : "s"}`;
+    const ruleCount = result.installedRuleCount;
+    const commandCount = result.installedCommandCount;
+    const ruleMessage =
+      ruleCount > 0 ? `${ruleCount} rule${ruleCount === 1 ? "" : "s"}` : null;
+    const commandMessage =
+      commandCount > 0
+        ? `${commandCount} command${commandCount === 1 ? "" : "s"}`
+        : null;
+    const countsParts: string[] = [];
+    if (ruleMessage) {
+      countsParts.push(ruleMessage);
+    }
+    if (commandMessage) {
+      countsParts.push(commandMessage);
+    }
+    const countsMessage =
+      countsParts.length > 0 ? countsParts.join(" and ") : "0 rules";
 
     if (dryRun) {
       if (result.packagesCount > 1) {
         console.log(
-          `Dry run: validated ${rulesInstalledMessage} across ${result.packagesCount} packages`,
+          `Dry run: validated ${countsMessage} across ${result.packagesCount} packages`,
         );
       } else {
-        console.log(`Dry run: validated ${rulesInstalledMessage}`);
+        console.log(`Dry run: validated ${countsMessage}`);
       }
-    } else if (result.installedRuleCount === 0) {
-      console.log("No rules installed");
+    } else if (ruleCount === 0 && commandCount === 0) {
+      console.log("No rules or commands installed");
     } else if (result.packagesCount > 1) {
       console.log(
-        `Successfully installed ${rulesInstalledMessage} across ${result.packagesCount} packages`,
+        `Successfully installed ${countsMessage} across ${result.packagesCount} packages`,
       );
     } else {
-      console.log(`Successfully installed ${rulesInstalledMessage}`);
+      console.log(`Successfully installed ${countsMessage}`);
     }
   }
 }

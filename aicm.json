@@ -1,6 +1,7 @@
 {
   "targets": ["cursor", "codex", "claude"],
   "rulesDir": "rules",
+  "commandsDir": "commands",
   "mcpServers": {
     "context7": {
       "command": "npx",

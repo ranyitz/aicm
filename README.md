@@ -95,6 +95,53 @@ For project-specific rules, you can specify `rulesDir` in your `aicm.json` confi
 }
 ```
 
+### Using Commands
+
+Cursor supports custom commands that can be invoked directly in the chat interface. aicm can manage these command files
+alongside your rules and MCP configurations so they install automatically into Cursor.
+
+#### Local Commands
+
+Add a commands directory to your project configuration:
+
+```json
+{
+  "commandsDir": "./commands",
+  "targets": ["cursor"]
+}
+```
+
+Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appear in Cursor under the `/` command menu.
+
+#### Commands in Presets
+
+Presets can ship reusable command libraries in addition to rules:
+
+```json
+{
+  "rulesDir": "rules",
+  "commandsDir": "commands"
+}
+```
+
+Preset command files install alongside local ones in `.cursor/commands/aicm/` so they appear with concise paths inside Cursor.
+If multiple presets provide a command at the same relative path, aicm will warn during installation and use the version from the
+last preset listed in your configuration. Use `overrides` to explicitly choose a different definition when needed.
+
+#### Command Overrides
+
+Use the existing `overrides` field to customize or disable commands provided by presets:
+
+```json
+{
+  "presets": ["@team/dev-preset"],
+  "overrides": {
+    "legacy-command": false,
+    "custom-test": "./commands/test.md"
+  }
+}
+```
+
 ### Notes
 
 - Generated rules are always placed in a subdirectory for deterministic cleanup and easy gitignore.
@@ -209,6 +256,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 ```json
 {
   "rulesDir": "./rules",
+  "commandsDir": "./commands",
   "targets": ["cursor"],
   "presets": [],
   "overrides": {},
@@ -218,6 +266,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 ```
 
 - **rulesDir**: Directory containing all rule files.
+- **commandsDir**: Directory containing Cursor command files.
 - **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`.
 - **presets**: List of preset packages or paths to include.
 - **overrides**: Map of rule names to `false` (disable) or a replacement file path.

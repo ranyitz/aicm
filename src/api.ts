@@ -17,5 +17,6 @@ export type {
   ResolvedConfig,
   Config,
   RuleFile,
+  CommandFile,
   MCPServers,
 } from "./utils/config";

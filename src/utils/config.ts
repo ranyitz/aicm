@@ -5,6 +5,7 @@ import fg from "fast-glob";
 
 export interface RawConfig {
   rulesDir?: string;
+  commandsDir?: string;
   targets?: string[];
   presets?: string[];
   overrides?: Record<string, string | false>;
@@ -15,6 +16,7 @@ export interface RawConfig {
 
 export interface Config {
   rulesDir?: string;
+  commandsDir?: string;
   targets: string[];
   presets?: string[];
   overrides?: Record<string, string | false>;
@@ -42,13 +44,17 @@ export interface MCPServers {
   [serverName: string]: MCPServer;
 }
 
-export interface RuleFile {
+export interface ManagedFile {
   name: string;
   content: string;
   sourcePath: string;
   source: "local" | "preset";
   presetName?: string;
 }
+
+export type RuleFile = ManagedFile;
+
+export type CommandFile = ManagedFile;
 
 export interface RuleCollection {
   [target: string]: RuleFile[];
@@ -57,11 +63,13 @@ export interface RuleCollection {
 export interface ResolvedConfig {
   config: Config;
   rules: RuleFile[];
+  commands: CommandFile[];
   mcpServers: MCPServers;
 }
 
 export const ALLOWED_CONFIG_KEYS = [
   "rulesDir",
+  "commandsDir",
   "targets",
   "presets",
   "overrides",
@@ -116,6 +124,7 @@ export function resolveWorkspaces(
 export function applyDefaults(config: RawConfig, workspaces: boolean): Config {
   return {
     rulesDir: config.rulesDir,
+    commandsDir: config.commandsDir,
     targets: config.targets || ["cursor"],
     presets: config.presets || [],
     overrides: config.overrides || {},
@@ -151,6 +160,8 @@ export function validateConfig(
   // Validate that either rulesDir or presets is provided
   const hasRulesDir =
     "rulesDir" in config && typeof config.rulesDir === "string";
+  const hasCommandsDir =
+    "commandsDir" in config && typeof config.commandsDir === "string";
   const hasPresets =
     "presets" in config &&
     Array.isArray(config.presets) &&
@@ -158,9 +169,9 @@ export function validateConfig(
 
   // In workspace mode, root config doesn't need rulesDir or presets
   // since packages will have their own configurations
-  if (!isWorkspaceMode && !hasRulesDir && !hasPresets) {
+  if (!isWorkspaceMode && !hasRulesDir && !hasPresets && !hasCommandsDir) {
     throw new Error(
-      `Either rulesDir or presets must be specified in config at ${configFilePath}`,
+      `At least one of rulesDir, commandsDir, or presets must be specified in config at ${configFilePath}`,
     );
   }
 
@@ -174,6 +185,18 @@ export function validateConfig(
 
     if (!fs.statSync(rulesPath).isDirectory()) {
       throw new Error(`Rules path is not a directory: ${rulesPath}`);
+    }
+  }
+
+  if (hasCommandsDir) {
+    const commandsPath = path.resolve(cwd, config.commandsDir as string);
+
+    if (!fs.existsSync(commandsPath)) {
+      throw new Error(`Commands directory does not exist: ${commandsPath}`);
+    }
+
+    if (!fs.statSync(commandsPath).isDirectory()) {
+      throw new Error(`Commands path is not a directory: ${commandsPath}`);
     }
   }
 
@@ -238,6 +261,42 @@ export async function loadRulesFromDirectory(
   return rules;
 }
 
+export async function loadCommandsFromDirectory(
+  commandsDir: string,
+  source: "local" | "preset",
+  presetName?: string,
+): Promise<CommandFile[]> {
+  const commands: CommandFile[] = [];
+
+  if (!fs.existsSync(commandsDir)) {
+    return commands;
+  }
+
+  const pattern = path.join(commandsDir, "**/*.md").replace(/\\/g, "/");
+  const filePaths = await fg(pattern, {
+    onlyFiles: true,
+    absolute: true,
+  });
+
+  filePaths.sort();
+
+  for (const filePath of filePaths) {
+    const content = await fs.readFile(filePath, "utf8");
+    const relativePath = path.relative(commandsDir, filePath);
+    const commandName = relativePath.replace(/\.md$/, "").replace(/\\/g, "/");
+
+    commands.push({
+      name: commandName,
+      content,
+      sourcePath: filePath,
+      source,
+      presetName,
+    });
+  }
+
+  return commands;
+}
+
 export function resolvePresetPath(
   presetPath: string,
   cwd: string,
@@ -272,7 +331,8 @@ export async function loadPreset(
   cwd: string,
 ): Promise<{
   config: Config;
-  rulesDir: string;
+  rulesDir?: string;
+  commandsDir?: string;
 }> {
   const resolvedPresetPath = resolvePresetPath(presetPath, cwd);
 
@@ -293,18 +353,24 @@ export async function loadPreset(
     );
   }
 
-  // Validate that preset has rulesDir
-  if (!presetConfig.rulesDir) {
-    throw new Error(`Preset "${presetPath}" must have a rulesDir specified`);
-  }
-
-  // Resolve preset's rules directory relative to the preset file
   const presetDir = path.dirname(resolvedPresetPath);
-  const presetRulesDir = path.resolve(presetDir, presetConfig.rulesDir);
+  const presetRulesDir = presetConfig.rulesDir
+    ? path.resolve(presetDir, presetConfig.rulesDir)
+    : undefined;
+  const presetCommandsDir = presetConfig.commandsDir
+    ? path.resolve(presetDir, presetConfig.commandsDir)
+    : undefined;
+
+  if (!presetRulesDir && !presetCommandsDir) {
+    throw new Error(
+      `Preset "${presetPath}" must have a rulesDir or commandsDir specified`,
+    );
+  }
 
   return {
     config: presetConfig,
     rulesDir: presetRulesDir,
+    commandsDir: presetCommandsDir,
   };
 }
 
@@ -313,9 +379,11 @@ export async function loadAllRules(
   cwd: string,
 ): Promise<{
   rules: RuleFile[];
+  commands: CommandFile[];
   mcpServers: MCPServers;
 }> {
   const allRules: RuleFile[] = [];
+  const allCommands: CommandFile[] = [];
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
 
   // Load local rules only if rulesDir is provided
@@ -325,16 +393,35 @@ export async function loadAllRules(
     allRules.push(...localRules);
   }
 
+  if (config.commandsDir) {
+    const localCommandsPath = path.resolve(cwd, config.commandsDir);
+    const localCommands = await loadCommandsFromDirectory(
+      localCommandsPath,
+      "local",
+    );
+    allCommands.push(...localCommands);
+  }
+
   if (config.presets) {
     for (const presetPath of config.presets) {
       const preset = await loadPreset(presetPath, cwd);
-      const presetRules = await loadRulesFromDirectory(
-        preset.rulesDir,
-        "preset",
-        presetPath,
-      );
+      if (preset.rulesDir) {
+        const presetRules = await loadRulesFromDirectory(
+          preset.rulesDir,
+          "preset",
+          presetPath,
+        );
+        allRules.push(...presetRules);
+      }
 
-      allRules.push(...presetRules);
+      if (preset.commandsDir) {
+        const presetCommands = await loadCommandsFromDirectory(
+          preset.commandsDir,
+          "preset",
+          presetPath,
+        );
+        allCommands.push(...presetCommands);
+      }
 
       // Merge MCP servers from preset
       if (preset.config.mcpServers) {
@@ -348,52 +435,54 @@ export async function loadAllRules(
 
   return {
     rules: allRules,
+    commands: allCommands,
     mcpServers: mergedMcpServers,
   };
 }
 
-export function applyOverrides(
-  rules: RuleFile[],
+export function applyOverrides<T extends ManagedFile>(
+  files: T[],
   overrides: Record<string, string | false>,
   cwd: string,
-): RuleFile[] {
-  // Validate that all override rule names exist in the resolved rules
-  for (const ruleName of Object.keys(overrides)) {
-    // TODO: support better error messages with edit distance, helping the user in case of a typo
-    // TODO: or shows a list of potential rules to override
-    if (!rules.some((rule) => rule.name === ruleName)) {
+): T[] {
+  // Validate that all override names exist in the resolved files
+  for (const name of Object.keys(overrides)) {
+    if (!files.some((file) => file.name === name)) {
       throw new Error(
-        `Override rule "${ruleName}" does not exist in resolved rules`,
+        `Override entry "${name}" does not exist in resolved files`,
       );
     }
   }
 
-  const ruleMap = new Map<string, RuleFile>();
+  const fileMap = new Map<string, T>();
 
-  for (const rule of rules) {
-    ruleMap.set(rule.name, rule);
+  for (const file of files) {
+    fileMap.set(file.name, file);
   }
 
-  for (const [ruleName, override] of Object.entries(overrides)) {
+  for (const [name, override] of Object.entries(overrides)) {
     if (override === false) {
-      ruleMap.delete(ruleName);
+      fileMap.delete(name);
     } else if (typeof override === "string") {
       const overridePath = path.resolve(cwd, override);
       if (!fs.existsSync(overridePath)) {
-        throw new Error(`Override rule file not found: ${override} in ${cwd}`);
+        throw new Error(`Override file not found: ${override} in ${cwd}`);
       }
 
       const content = fs.readFileSync(overridePath, "utf8");
-      ruleMap.set(ruleName, {
-        name: ruleName,
+      const existing = fileMap.get(name);
+      fileMap.set(name, {
+        ...(existing ?? {}),
+        name,
         content,
         sourcePath: overridePath,
         source: "local",
-      });
+        presetName: undefined,
+      } as T);
     }
   }
 
-  return Array.from(ruleMap.values());
+  return Array.from(fileMap.values());
 }
 
 /**
@@ -461,24 +550,51 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
 
   const configWithDefaults = applyDefaults(config, isWorkspaces);
 
-  const { rules, mcpServers } = await loadAllRules(
+  const { rules, commands, mcpServers } = await loadAllRules(
     configWithDefaults,
     workingDir,
   );
 
   let rulesWithOverrides = rules;
+  let commandsWithOverrides = commands;
 
   if (configWithDefaults.overrides) {
-    rulesWithOverrides = applyOverrides(
-      rules,
-      configWithDefaults.overrides,
-      workingDir,
+    const overrides = configWithDefaults.overrides;
+    const ruleNames = new Set(rules.map((rule) => rule.name));
+    const commandNames = new Set(commands.map((command) => command.name));
+
+    for (const overrideName of Object.keys(overrides)) {
+      if (!ruleNames.has(overrideName) && !commandNames.has(overrideName)) {
+        throw new Error(
+          `Override entry "${overrideName}" does not exist in resolved rules or commands`,
+        );
+      }
+    }
+
+    const ruleOverrides = Object.fromEntries(
+      Object.entries(overrides).filter(([name]) => ruleNames.has(name)),
     );
+    const commandOverrides = Object.fromEntries(
+      Object.entries(overrides).filter(([name]) => commandNames.has(name)),
+    );
+
+    if (Object.keys(ruleOverrides).length > 0) {
+      rulesWithOverrides = applyOverrides(rules, ruleOverrides, workingDir);
+    }
+
+    if (Object.keys(commandOverrides).length > 0) {
+      commandsWithOverrides = applyOverrides(
+        commands,
+        commandOverrides,
+        workingDir,
+      );
+    }
   }
 
   return {
     config: configWithDefaults,
     rules: rulesWithOverrides,
+    commands: commandsWithOverrides,
     mcpServers,
   };
 }
