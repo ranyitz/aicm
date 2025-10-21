@@ -282,6 +282,54 @@ function dedupeCommandsForInstall(commands: CommandFile[]): CommandFile[] {
   return Array.from(unique.values());
 }
 
+function mergeWorkspaceCommands(
+  packages: Array<{
+    relativePath: string;
+    config: ResolvedConfig;
+  }>,
+): CommandFile[] {
+  const commands: CommandFile[] = [];
+  const seenPresetCommands = new Set<string>();
+
+  for (const pkg of packages) {
+    const hasCursorTarget = pkg.config.config.targets.includes("cursor");
+    if (!hasCursorTarget) {
+      continue;
+    }
+
+    for (const command of pkg.config.commands ?? []) {
+      if (command.presetName) {
+        const presetKey = `${command.presetName}::${command.name}`;
+        if (seenPresetCommands.has(presetKey)) {
+          continue;
+        }
+        seenPresetCommands.add(presetKey);
+      }
+
+      commands.push(command);
+    }
+  }
+
+  return commands;
+}
+
+function collectWorkspaceCommandTargets(
+  packages: Array<{
+    relativePath: string;
+    config: ResolvedConfig;
+  }>,
+): SupportedTarget[] {
+  const targets = new Set<SupportedTarget>();
+
+  for (const pkg of packages) {
+    if (pkg.config.config.targets.includes("cursor")) {
+      targets.add("cursor");
+    }
+  }
+
+  return Array.from(targets);
+}
+
 /**
  * Write MCP servers configuration to IDE targets
  */
@@ -677,6 +725,24 @@ async function installWorkspaces(
       verbose,
       dryRun,
     });
+
+    const workspaceCommands = mergeWorkspaceCommands(packages);
+    const workspaceCommandTargets = collectWorkspaceCommandTargets(packages);
+
+    if (workspaceCommands.length > 0) {
+      warnPresetCommandCollisions(workspaceCommands);
+    }
+
+    if (
+      !dryRun &&
+      workspaceCommands.length > 0 &&
+      workspaceCommandTargets.length > 0
+    ) {
+      const dedupedWorkspaceCommands =
+        dedupeCommandsForInstall(workspaceCommands);
+
+      writeCommandsToTargets(dedupedWorkspaceCommands, workspaceCommandTargets);
+    }
 
     const { merged: rootMcp, conflicts } = mergeWorkspaceMcpServers(packages);
 
