@@ -102,12 +102,48 @@ describe("command installation", () => {
       "Successfully installed 2 commands across 2 packages",
     );
 
+    const rootStructure = getDirectoryStructure(".cursor/commands");
+
+    expect(rootStructure).toEqual([
+      ".cursor/commands/aicm/",
+      ".cursor/commands/aicm/test-a.md",
+      ".cursor/commands/aicm/test-b.md",
+    ]);
+
+    expect(readTestFile(".cursor/commands/aicm/test-a.md")).toContain(
+      "Package A Command",
+    );
+    expect(readTestFile(".cursor/commands/aicm/test-b.md")).toContain(
+      "Package B Command",
+    );
+
     expect(readTestFile("package-a/.cursor/commands/aicm/test-a.md")).toContain(
       "Package A Command",
     );
     expect(readTestFile("package-b/.cursor/commands/aicm/test-b.md")).toContain(
       "Package B Command",
     );
-    expect(fileExists(".cursor/commands/aicm/test-a.md")).toBe(false);
+  });
+
+  test("dedupes preset commands when joining workspace commands", async () => {
+    await setupFromFixture("commands-workspace-preset");
+
+    const { stdout } = await runCommand("install --ci --verbose");
+
+    expect(stdout).toContain(
+      "Successfully installed 2 commands across 2 packages",
+    );
+
+    const structure = getDirectoryStructure(".cursor/commands");
+
+    expect(structure).toEqual([
+      ".cursor/commands/aicm/",
+      ".cursor/commands/aicm/test/",
+      ".cursor/commands/aicm/test/run-tests.md",
+    ]);
+
+    expect(readTestFile(".cursor/commands/aicm/test/run-tests.md")).toContain(
+      "Run shared workspace tests.",
+    );
   });
 });
