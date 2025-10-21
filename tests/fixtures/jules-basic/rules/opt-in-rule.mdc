@@ -1,0 +1,9 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+- Follow semantic versioning for releases
+- Use conventional commits for commit messages
+- Run tests before pushing changes

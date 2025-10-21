@@ -82,6 +82,7 @@ export const SUPPORTED_TARGETS = [
   "cursor",
   "windsurf",
   "codex",
+  "jules",
   "claude",
 ] as const;
 export type SupportedTarget = (typeof SUPPORTED_TARGETS)[number];

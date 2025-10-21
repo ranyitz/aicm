@@ -1,0 +1,9 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+- Use yarn for package management
+- Development workflow: e2e tests → implementation → verification
+- Document all features in README.md

@@ -19,6 +19,7 @@ aicm accepts Cursor's `.mdc` format as it provides the most comprehensive featur
 - **Cursor**: Native `.mdc` files with full feature support
 - **Windsurf**: Generates `.windsurfrules` file
 - **Codex**: Generates `AGENTS.md` file
+- **Jules**: Generates `AGENTS.md` file
 - **Claude**: Generates `CLAUDE.md` file
 
 This approach ensures you write your rules once in the richest format available, while maintaining compatibility across different AI development environments.
@@ -283,6 +284,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 - **Cursor**: Rules are installed as individual `.mdc` files in the Cursor rules directory (`.cursor/rules/aicm/`), mcp servers are installed to `.cursor/mcp.json`
 - **Windsurf**: Rules are installed in the `.aicm` directory which should be added to your `.gitignore` file. Our approach for Windsurf is to create links from the `.windsurfrules` file to the respective rules in the `.aicm` directory. There is no support for local mcp servers at the moment.
 - **Codex**: Rules are installed in the `.aicm` directory and referenced from `AGENTS.md`.
+- **Jules**: Rules are installed in the `.aicm` directory and referenced from `AGENTS.md`.
 
 ## Commands
 
