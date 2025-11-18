@@ -17,7 +17,10 @@ interface ComponentProps {
   count: number;
 }
 
-export const ExampleComponent: React.FC<ComponentProps> = ({ title, count }) => {
+export const ExampleComponent: React.FC<ComponentProps> = ({
+  title,
+  count,
+}) => {
   return (
     <div>
       <h1>{title}</h1>
@@ -25,4 +28,3 @@ export const ExampleComponent: React.FC<ComponentProps> = ({ title, count }) => 
     </div>
   );
 };
-
