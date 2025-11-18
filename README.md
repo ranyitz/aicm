@@ -95,6 +95,18 @@ For project-specific rules, you can specify `rulesDir` in your `aicm.json` confi
 }
 ```
 
+**Referencing Auxiliary Files**
+
+You can place any file (e.g., `example.ts`, `schema.json`, `guide.md`) in your `rulesDir` alongside your `.mdc` files. These assets are automatically copied to the target location. You can reference them in your rules using relative paths, and aicm will automatically rewrite the links to point to the correct location for each target IDE.
+
+Example `rules/my-rule.mdc`:
+
+```markdown
+# My Rule
+
+See [Example](./example.ts) for details.
+```
+
 ### Using Commands
 
 Cursor supports custom commands that can be invoked directly in the chat interface. aicm can manage these command files

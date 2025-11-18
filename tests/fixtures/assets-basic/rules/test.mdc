@@ -1,0 +1,8 @@
+---
+description: Test rule with asset
+globs: "*.ts"
+---
+# Test Rule
+
+See [Example](./example.txt)
+See [Missing](./missing.txt)

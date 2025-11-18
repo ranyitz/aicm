@@ -1,0 +1,7 @@
+---
+description: preset rule
+globs: *.ts
+---
+# Preset Rule
+
+See [Asset](./preset-asset.txt)

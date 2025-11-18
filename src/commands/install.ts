@@ -7,6 +7,7 @@ import {
   ResolvedConfig,
   RuleFile,
   CommandFile,
+  AssetFile,
   MCPServers,
   SupportedTarget,
   detectWorkspacesFromPackageJson,
@@ -63,6 +64,10 @@ export interface InstallResult {
    */
   installedCommandCount: number;
   /**
+   * Number of assets installed
+   */
+  installedAssetCount: number;
+  /**
    * Number of packages installed
    */
   packagesCount: number;
@@ -76,6 +81,7 @@ function getTargetPaths(): Record<string, string> {
     windsurf: path.join(projectDir, ".aicm"),
     codex: path.join(projectDir, ".aicm"),
     claude: path.join(projectDir, ".aicm"),
+    aicm: path.join(projectDir, ".aicm"),
   };
 }
 
@@ -139,6 +145,7 @@ function extractNamespaceFromPresetPath(presetPath: string): string[] {
  */
 function writeRulesForFile(
   rules: RuleFile[],
+  assets: AssetFile[],
   ruleDir: string,
   rulesFile: string,
 ): void {
@@ -159,9 +166,11 @@ function writeRulesForFile(
       rulePath = path.join(ruleDir, ...ruleNameParts);
     }
 
+    const content = rule.content;
+
     const physicalRulePath = rulePath + ".md";
     fs.ensureDirSync(path.dirname(physicalRulePath));
-    fs.writeFileSync(physicalRulePath, rule.content);
+    fs.writeFileSync(physicalRulePath, content);
 
     const relativeRuleDir = path.basename(ruleDir);
 
@@ -178,10 +187,13 @@ function writeRulesForFile(
     // Normalize to POSIX style for cross-platform compatibility
     const windsurfPathPosix = windsurfPath.replace(/\\/g, "/");
 
+    // Rewrite links in content
+    // const content = rewriteRuleContent(rule.content, rule, assets); // Moved up
+
     return {
       name: rule.name,
       path: windsurfPathPosix,
-      metadata: parseRuleFrontmatter(rule.content),
+      metadata: parseRuleFrontmatter(content),
     };
   });
 
@@ -189,11 +201,51 @@ function writeRulesForFile(
   writeRulesFile(rulesContent, path.join(process.cwd(), rulesFile));
 }
 
+function writeAssetsToTargets(
+  assets: AssetFile[],
+  targets: SupportedTarget[],
+): void {
+  const targetPaths = getTargetPaths();
+
+  for (const target of targets) {
+    let targetDir: string;
+
+    switch (target) {
+      case "cursor":
+        targetDir = targetPaths.cursor;
+        break;
+      case "windsurf":
+      case "codex":
+      case "claude":
+        // For single file targets, assets go to the same directory as the config file
+        // which is .aicm/ (from getTargetPaths implementation)
+        targetDir = targetPaths.aicm; // they are all .aicm
+        break;
+      default:
+        continue;
+    }
+
+    for (const asset of assets) {
+      let assetPath;
+      if (asset.presetName) {
+        const namespace = extractNamespaceFromPresetPath(asset.presetName);
+        assetPath = path.join(targetDir, ...namespace, asset.name);
+      } else {
+        assetPath = path.join(targetDir, asset.name);
+      }
+
+      fs.ensureDirSync(path.dirname(assetPath));
+      fs.writeFileSync(assetPath, asset.content);
+    }
+  }
+}
+
 /**
  * Write all collected rules to their respective IDE targets
  */
 function writeRulesToTargets(
   rules: RuleFile[],
+  assets: AssetFile[],
   targets: SupportedTarget[],
 ): void {
   const targetPaths = getTargetPaths();
@@ -207,21 +259,29 @@ function writeRulesToTargets(
         break;
       case "windsurf":
         if (rules.length > 0) {
-          writeRulesForFile(rules, targetPaths.windsurf, ".windsurfrules");
+          writeRulesForFile(
+            rules,
+            assets,
+            targetPaths.windsurf,
+            ".windsurfrules",
+          );
         }
         break;
       case "codex":
         if (rules.length > 0) {
-          writeRulesForFile(rules, targetPaths.codex, "AGENTS.md");
+          writeRulesForFile(rules, assets, targetPaths.codex, "AGENTS.md");
         }
         break;
       case "claude":
         if (rules.length > 0) {
-          writeRulesForFile(rules, targetPaths.claude, "CLAUDE.md");
+          writeRulesForFile(rules, assets, targetPaths.claude, "CLAUDE.md");
         }
         break;
     }
   }
+
+  // Write assets after rules so they don't get wiped by emptyDirSync
+  writeAssetsToTargets(assets, targets);
 }
 
 function writeCommandsToTargets(
@@ -532,17 +592,19 @@ export async function installPackage(
         error: new Error("Configuration file not found"),
         installedRuleCount: 0,
         installedCommandCount: 0,
+        installedAssetCount: 0,
         packagesCount: 0,
       };
     }
 
-    const { config, rules, commands, mcpServers } = resolvedConfig;
+    const { config, rules, commands, assets, mcpServers } = resolvedConfig;
 
     if (config.skipInstall === true) {
       return {
         success: true,
         installedRuleCount: 0,
         installedCommandCount: 0,
+        installedAssetCount: 0,
         packagesCount: 0,
       };
     }
@@ -552,7 +614,7 @@ export async function installPackage(
 
     try {
       if (!options.dryRun) {
-        writeRulesToTargets(rules, config.targets as SupportedTarget[]);
+        writeRulesToTargets(rules, assets, config.targets as SupportedTarget[]);
 
         writeCommandsToTargets(
           commandsToInstall,
@@ -577,6 +639,7 @@ export async function installPackage(
         success: true,
         installedRuleCount: uniqueRuleCount,
         installedCommandCount: uniqueCommandCount,
+        installedAssetCount: assets.length,
         packagesCount: 1,
       };
     } catch (error) {
@@ -585,6 +648,7 @@ export async function installPackage(
         error: error instanceof Error ? error : new Error(String(error)),
         installedRuleCount: 0,
         installedCommandCount: 0,
+        installedAssetCount: 0,
         packagesCount: 0,
       };
     }
@@ -609,9 +673,11 @@ async function installWorkspacesPackages(
     error?: Error;
     installedRuleCount: number;
     installedCommandCount: number;
+    installedAssetCount: number;
   }>;
   totalRuleCount: number;
   totalCommandCount: number;
+  totalAssetCount: number;
 }> {
   const results: Array<{
     path: string;
@@ -619,9 +685,11 @@ async function installWorkspacesPackages(
     error?: Error;
     installedRuleCount: number;
     installedCommandCount: number;
+    installedAssetCount: number;
   }> = [];
   let totalRuleCount = 0;
   let totalCommandCount = 0;
+  let totalAssetCount = 0;
 
   // Install packages sequentially for now (can be parallelized later)
   for (const pkg of packages) {
@@ -636,6 +704,7 @@ async function installWorkspacesPackages(
 
       totalRuleCount += result.installedRuleCount;
       totalCommandCount += result.installedCommandCount;
+      totalAssetCount += result.installedAssetCount;
 
       results.push({
         path: pkg.relativePath,
@@ -643,6 +712,7 @@ async function installWorkspacesPackages(
         error: result.error,
         installedRuleCount: result.installedRuleCount,
         installedCommandCount: result.installedCommandCount,
+        installedAssetCount: result.installedAssetCount,
       });
     } catch (error) {
       results.push({
@@ -651,6 +721,7 @@ async function installWorkspacesPackages(
         error: error instanceof Error ? error : new Error(String(error)),
         installedRuleCount: 0,
         installedCommandCount: 0,
+        installedAssetCount: 0,
       });
     }
   }
@@ -662,6 +733,7 @@ async function installWorkspacesPackages(
     packages: results,
     totalRuleCount,
     totalCommandCount,
+    totalAssetCount,
   };
 }
 
@@ -703,6 +775,7 @@ async function installWorkspaces(
         error: new Error("No packages with aicm configurations found"),
         installedRuleCount: 0,
         installedCommandCount: 0,
+        installedAssetCount: 0,
         packagesCount: 0,
       };
     }
@@ -822,6 +895,7 @@ async function installWorkspaces(
         ),
         installedRuleCount: result.totalRuleCount,
         installedCommandCount: result.totalCommandCount,
+        installedAssetCount: result.totalAssetCount,
         packagesCount: result.packages.length,
       };
     }
@@ -830,6 +904,7 @@ async function installWorkspaces(
       success: true,
       installedRuleCount: result.totalRuleCount,
       installedCommandCount: result.totalCommandCount,
+      installedAssetCount: result.totalAssetCount,
       packagesCount: result.packages.length,
     };
   });
@@ -852,6 +927,7 @@ export async function install(
       success: true,
       installedRuleCount: 0,
       installedCommandCount: 0,
+      installedAssetCount: 0,
       packagesCount: 0,
     };
   }
