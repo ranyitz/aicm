@@ -78,9 +78,6 @@ function getTargetPaths(): Record<string, string> {
 
   return {
     cursor: path.join(projectDir, ".cursor", "rules", "aicm"),
-    windsurf: path.join(projectDir, ".aicm"),
-    codex: path.join(projectDir, ".aicm"),
-    claude: path.join(projectDir, ".aicm"),
     aicm: path.join(projectDir, ".aicm"),
   };
 }
@@ -211,9 +208,6 @@ function writeRulesForFile(
     // Normalize to POSIX style for cross-platform compatibility
     const windsurfPathPosix = windsurfPath.replace(/\\/g, "/");
 
-    // Rewrite links in content
-    // const content = rewriteRuleContent(rule.content, rule, assets); // Moved up
-
     return {
       name: rule.name,
       path: windsurfPathPosix,
@@ -241,9 +235,7 @@ function writeAssetsToTargets(
       case "windsurf":
       case "codex":
       case "claude":
-        // For single file targets, assets go to the same directory as the config file
-        // which is .aicm/ (from getTargetPaths implementation)
-        targetDir = targetPaths.aicm; // they are all .aicm
+        targetDir = targetPaths.aicm;
         break;
       default:
         continue;
@@ -283,22 +275,17 @@ function writeRulesToTargets(
         break;
       case "windsurf":
         if (rules.length > 0) {
-          writeRulesForFile(
-            rules,
-            assets,
-            targetPaths.windsurf,
-            ".windsurfrules",
-          );
+          writeRulesForFile(rules, assets, targetPaths.aicm, ".windsurfrules");
         }
         break;
       case "codex":
         if (rules.length > 0) {
-          writeRulesForFile(rules, assets, targetPaths.codex, "AGENTS.md");
+          writeRulesForFile(rules, assets, targetPaths.aicm, "AGENTS.md");
         }
         break;
       case "claude":
         if (rules.length > 0) {
-          writeRulesForFile(rules, assets, targetPaths.claude, "CLAUDE.md");
+          writeRulesForFile(rules, assets, targetPaths.aicm, "CLAUDE.md");
         }
         break;
     }
