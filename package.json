@@ -65,5 +65,6 @@
   "lint-staged": {
     "*.{js,ts,json,md,mjs}": "prettier --write",
     "*.ts": "eslint"
-  }
+  },
+  "packageManager": "pnpm@10.18.3"
 }

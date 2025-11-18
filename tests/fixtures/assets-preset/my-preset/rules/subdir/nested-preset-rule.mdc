@@ -1,0 +1,8 @@
+---
+description: nested preset rule
+globs: *.ts
+---
+# Nested Preset Rule
+
+See [Root Asset](../preset-asset.txt)
+See [Nested Asset](./nested-asset.json)

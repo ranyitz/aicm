@@ -52,6 +52,14 @@ export interface ManagedFile {
   presetName?: string;
 }
 
+export interface AssetFile {
+  name: string;
+  content: Buffer;
+  sourcePath: string;
+  source: "local" | "preset";
+  presetName?: string;
+}
+
 export type RuleFile = ManagedFile;
 
 export type CommandFile = ManagedFile;
@@ -64,6 +72,7 @@ export interface ResolvedConfig {
   config: Config;
   rules: RuleFile[];
   commands: CommandFile[];
+  assets: AssetFile[];
   mcpServers: MCPServers;
 }
 
@@ -297,6 +306,44 @@ export async function loadCommandsFromDirectory(
   return commands;
 }
 
+export async function loadAssetsFromDirectory(
+  rulesDir: string,
+  source: "local" | "preset",
+  presetName?: string,
+): Promise<AssetFile[]> {
+  const assets: AssetFile[] = [];
+
+  if (!fs.existsSync(rulesDir)) {
+    return assets;
+  }
+
+  // Find all files except .mdc files and hidden files
+  const pattern = path.join(rulesDir, "**/*").replace(/\\/g, "/");
+  const filePaths = await fg(pattern, {
+    onlyFiles: true,
+    absolute: true,
+    ignore: ["**/*.mdc", "**/.*"],
+  });
+
+  for (const filePath of filePaths) {
+    const content = await fs.readFile(filePath);
+    // Preserve directory structure by using relative path from rulesDir
+    const relativePath = path.relative(rulesDir, filePath);
+    // Keep extension for assets
+    const assetName = relativePath.replace(/\\/g, "/");
+
+    assets.push({
+      name: assetName,
+      content,
+      sourcePath: filePath,
+      source,
+      presetName,
+    });
+  }
+
+  return assets;
+}
+
 export function resolvePresetPath(
   presetPath: string,
   cwd: string,
@@ -380,17 +427,21 @@ export async function loadAllRules(
 ): Promise<{
   rules: RuleFile[];
   commands: CommandFile[];
+  assets: AssetFile[];
   mcpServers: MCPServers;
 }> {
   const allRules: RuleFile[] = [];
   const allCommands: CommandFile[] = [];
+  const allAssets: AssetFile[] = [];
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
 
   // Load local rules only if rulesDir is provided
   if (config.rulesDir) {
     const localRulesPath = path.resolve(cwd, config.rulesDir);
     const localRules = await loadRulesFromDirectory(localRulesPath, "local");
+    const localAssets = await loadAssetsFromDirectory(localRulesPath, "local");
     allRules.push(...localRules);
+    allAssets.push(...localAssets);
   }
 
   if (config.commandsDir) {
@@ -411,7 +462,13 @@ export async function loadAllRules(
           "preset",
           presetPath,
         );
+        const presetAssets = await loadAssetsFromDirectory(
+          preset.rulesDir,
+          "preset",
+          presetPath,
+        );
         allRules.push(...presetRules);
+        allAssets.push(...presetAssets);
       }
 
       if (preset.commandsDir) {
@@ -436,6 +493,7 @@ export async function loadAllRules(
   return {
     rules: allRules,
     commands: allCommands,
+    assets: allAssets,
     mcpServers: mergedMcpServers,
   };
 }
@@ -550,13 +608,14 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
 
   const configWithDefaults = applyDefaults(config, isWorkspaces);
 
-  const { rules, commands, mcpServers } = await loadAllRules(
+  const { rules, commands, assets, mcpServers } = await loadAllRules(
     configWithDefaults,
     workingDir,
   );
 
   let rulesWithOverrides = rules;
   let commandsWithOverrides = commands;
+  // Note: Assets are not currently supported in overrides as they are binary/varied files
 
   if (configWithDefaults.overrides) {
     const overrides = configWithDefaults.overrides;
@@ -595,6 +654,7 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
     config: configWithDefaults,
     rules: rulesWithOverrides,
     commands: commandsWithOverrides,
+    assets,
     mcpServers,
   };
 }
