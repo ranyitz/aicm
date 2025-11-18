@@ -123,8 +123,32 @@ function writeCursorCommands(
     const commandPath = path.join(cursorCommandsDir, ...commandNameParts);
     const commandFile = commandPath + ".md";
     fs.ensureDirSync(path.dirname(commandFile));
-    fs.writeFileSync(commandFile, command.content);
+
+    // If the command file references assets in the rules directory, we need to rewrite the links.
+    // Commands are installed in .cursor/commands/aicm/
+    // Rules/assets are installed in .cursor/rules/aicm/
+    // So a link like "../rules/asset.json" in source (from commands/ to rules/)
+    // needs to become "../../rules/aicm/asset.json" in target (from .cursor/commands/aicm/ to .cursor/rules/aicm/)
+    const content = rewriteCommandRelativeLinks(command.content);
+    fs.writeFileSync(commandFile, content);
   }
+}
+
+function rewriteCommandRelativeLinks(content: string): string {
+  return content.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (match, text, url) => {
+    if (url.startsWith("http") || url.startsWith("#") || url.startsWith("/")) {
+      return match;
+    }
+
+    // Check if it's a link to the rules directory
+    if (url.includes("rules/")) {
+      const parts = url.split("/");
+      const filename = parts[parts.length - 1];
+
+      return `[${text}](../../rules/aicm/${filename})`;
+    }
+    return match;
+  });
 }
 
 function extractNamespaceFromPresetPath(presetPath: string): string[] {

@@ -91,4 +91,31 @@ describe("asset copying and referencing", () => {
       "[Root Asset](../preset-asset.txt)",
     );
   });
+
+  test("should rewrite links in commands to point to assets in rules directory", async () => {
+    await setupFromFixture("assets-commands");
+
+    // Run install targeting cursor
+    const { code } = await runCommand("install --ci");
+    expect(code).toBe(0);
+
+    // Check asset is copied to .cursor/rules/aicm/
+    expect(
+      fileExists(path.join(".cursor", "rules", "aicm", "schema.json")),
+    ).toBe(true);
+
+    // Check command is copied to .cursor/commands/aicm/
+    const commandPath = path.join(
+      ".cursor",
+      "commands",
+      "aicm",
+      "generate-schema.md",
+    );
+    expect(fileExists(commandPath)).toBe(true);
+
+    const commandContent = readTestFile(commandPath);
+    expect(commandContent).toContain(
+      "[Schema Template](../../rules/aicm/schema.json)",
+    );
+  });
 });

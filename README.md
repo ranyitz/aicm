@@ -107,6 +107,20 @@ Example `rules/my-rule.mdc`:
 See [Example](./example.ts) for details.
 ```
 
+**Commands referencing files**
+
+You can also use this feature to create commands that reference auxiliary files in your `rulesDir`. Since assets in `rulesDir` are copied to the target directory, your commands can link to them.
+
+For example, if you have a schema file at `rules/schema.json` and a command at `commands/generate-schema.md`:
+
+```markdown
+# Generate Schema
+
+Use the schema defined in [Schema Template](../rules/schema.json) to generate the response.
+```
+
+When installed, `aicm` will automatically rewrite the link to point to the correct location of `schema.json` in the target environment (e.g., `../../rules/aicm/schema.json` for Cursor).
+
 ### Using Commands
 
 Cursor supports custom commands that can be invoked directly in the chat interface. aicm can manage these command files
