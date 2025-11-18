@@ -2,56 +2,76 @@
 
 > AI Configuration Manager
 
-A CLI tool for managing Agentic configurations across projects
+A CLI tool for managing Agentic configurations across projects.
 
 ![aicm](https://github.com/user-attachments/assets/ca38f2d6-ece6-43ad-a127-6f4fce8b2a5a)
 
+## Table of Contents
+
+- [Why](#why)
+- [Supported Environments](#supported-environments)
+- [Getting Started](#getting-started)
+  - [Creating a Preset](#creating-a-preset)
+  - [Using a Preset](#using-a-preset)
+- [Features](#features)
+  - [Rules](#using-rules)
+  - [Commands](#using-commands)
+  - [MCP Servers](#mcp-servers)
+  - [Auxiliary Files](#referencing-auxiliary-files)
+  - [Overrides](#overrides)
+- [Workspaces Support](#workspaces-support)
+- [Configuration](#configuration)
+- [CLI Commands](#cli-commands)
+- [Node.js API](#nodejs-api)
+
 ## Why
 
-Modern AI-powered IDEs like Cursor and Agents like Codex enable developers to write custom instructions to maintain context across coding sessions. They also support MCPs for enhanced functionality. However, sharing these configurations across multiple projects is a challenge.
+Modern AI-powered IDEs like Cursor and Agents like Codex allow developers to add custom instructions, commands, and MCP servers. However, keeping these configurations consistent across a team or multiple projects is a challenge.
 
-**aicm** solves this by enabling you to create reusable presets that bundle rules and MCP configurations together. With multi-target support, you can write your rules once and deploy them consistently across different AI tools and IDEs.
+**aicm** enables **"Write Once, Use Everywhere"** for your AI configurations.
 
-## How it works
+- **Team Consistency:** Ensure every developer on your team uses the same rules and best practices.
+- **Reusable Presets:** Bundle your rules, commands & MCP configurations into npm packages (e.g., `@company/ai-preset`) to share them across your organization.
+- **Multi-Target Support:** Write rules once in the comprehensive `.mdc` format, and automatically deploy them to Cursor, Windsurf, Codex, and Claude.
 
-aicm accepts Cursor's `.mdc` format as it provides the most comprehensive feature set. For other AI tools and IDEs, aicm automatically generates compatible formats:
+## Supported Environments
 
-- **Cursor**: Native `.mdc` files with full feature support
-- **Windsurf**: Generates `.windsurfrules` file
-- **Codex**: Generates `AGENTS.md` file
-- **Claude**: Generates `CLAUDE.md` file
+aicm acts as a bridge between your configuration and your AI tools. It accepts Cursor's `.mdc` format and can transform it for other environments:
 
-This approach ensures you write your rules once in the richest format available, while maintaining compatibility across different AI development environments.
+| Target       | Installation                                                                   |
+| ------------ | ------------------------------------------------------------------------------ |
+| **Cursor**   | Copies `.mdc` files to `.cursor/rules/aicm/` and configures `.cursor/mcp.json` |
+| **Windsurf** | Generates a `.windsurfrules` file that links to rules in `.aicm/`              |
+| **Codex**    | Generates an `AGENTS.md` file that references rules in `.aicm/`                |
+| **Claude**   | Generates a `CLAUDE.md` file that references rules in `.aicm/`                 |
 
 ## Getting Started
 
 The easiest way to get started with aicm is by using **presets** - npm packages containing rules and MCP configurations that you can install in any project.
 
-### Using a preset
+### Demo
 
-1. **Install a preset npm package**:
+We'll install [an npm package](https://github.com/ranyitz/pirate-coding) containing a simple "Pirate Coding" preset to demonstrate how aicm works.
+
+1. **Install the demo preset package**:
 
 ```bash
-npm install --save-dev @team/ai-preset
+npm install --save-dev pirate-coding
 ```
 
-2. **Create an `aicm.json` file** in your project root:
+2. **Create an `aicm.json` file** in your project:
 
-```json
-{ "presets": ["@team/ai-preset"] }
+```bash
+echo '{ "presets": ["pirate-coding"] }' > aicm.json
 ```
 
-3. **Add a prepare script** to your `package.json` to install all preset rules and MCPs:
+3. **Install all rules & MCPs from your configuration**:
 
-```json
-{
-  "scripts": {
-    "prepare": "npx aicm  -y install"
-  }
-}
+```bash
+npx aicm install
 ```
 
-The rules are now installed in `.cursor/rules/aicm/` and any MCP servers are configured in `.cursor/mcp.json`.
+After installation, open Cursor and ask it to do something. Your AI assistant will respond with pirate-themed coding advice.
 
 ### Creating a Preset
 
@@ -85,17 +105,89 @@ The rules are now installed in `.cursor/rules/aicm/` and any MCP servers are con
 
 > **Note:** This is syntactic sugar for `@team/ai-preset/aicm.json`.
 
-### Using Local Rules
+### Using a Preset
 
-For project-specific rules, you can specify `rulesDir` in your `aicm.json` config. This approach allows you to write rules once and automatically generate them for all configured targets.
+To use a real preset in your production project:
+
+1. **Install a preset npm package**:
+
+```bash
+npm install --save-dev @team/ai-preset
+```
+
+2. **Create an `aicm.json` file** in your project root:
+
+```json
+{ "presets": ["@team/ai-preset"] }
+```
+
+3. **Add a prepare script** to your `package.json` to ensure rules are always up to date:
 
 ```json
 {
-  "rulesDir": "path/to/rules/dir"
+  "scripts": {
+    "prepare": "npx aicm -y install"
+  }
 }
 ```
 
-**Referencing Auxiliary Files**
+The rules are now installed in `.cursor/rules/aicm/` and any MCP servers are configured in `.cursor/mcp.json`.
+
+### Notes
+
+- Generated rules are always placed in a subdirectory for deterministic cleanup and easy gitignore.
+- Users should add `.cursor/rules/aicm/` and `.aicm/` (for Windsurf/Codex) to `.gitignore` to avoid tracking generated rules.
+
+## Features
+
+### Using Rules
+
+aicm uses Cursor's `.mdc` files for rules. Read more about the format [here](https://cursor.com/docs/context/rules).
+
+Add a rules directory to your project configuration:
+
+```json
+{
+  "rulesDir": "./rules",
+  "targets": ["cursor"]
+}
+```
+
+Rules are installed in `.cursor/rules/aicm/` and are loaded automatically by Cursor.
+
+### Using Commands
+
+Cursor supports custom commands that can be invoked directly in the chat interface. aicm can manage these command files alongside your rules and MCP configurations.
+
+Add a commands directory to your project configuration:
+
+```json
+{
+  "commandsDir": "./commands",
+  "targets": ["cursor"]
+}
+```
+
+Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appear in Cursor under the `/` command menu.
+
+### MCP Servers
+
+You can configure MCP servers directly in your `aicm.json`, which is useful for sharing mcp configurations across your team or bundling them into presets.
+
+```json
+{
+  "mcpServers": {
+    "Playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp"]
+    }
+  }
+}
+```
+
+When installed, these servers are automatically added to your `.cursor/mcp.json`.
+
+### Referencing Auxiliary Files
 
 You can place any file (e.g., `example.ts`, `schema.json`, `guide.md`) in your `rulesDir` alongside your `.mdc` files. These assets are automatically copied to the target location. You can reference them in your rules using relative paths, and aicm will automatically rewrite the links to point to the correct location for each target IDE.
 
@@ -107,7 +199,7 @@ Example `rules/my-rule.mdc`:
 See [Example](./example.ts) for details.
 ```
 
-**Commands referencing files**
+#### Commands Referencing Files
 
 You can also use this feature to create commands that reference auxiliary files in your `rulesDir`. Since assets in `rulesDir` are copied to the target directory, your commands can link to them.
 
@@ -121,101 +213,20 @@ Use the schema defined in [Schema Template](../rules/schema.json) to generate th
 
 When installed, `aicm` will automatically rewrite the link to point to the correct location of `schema.json` in the target environment (e.g., `../../rules/aicm/schema.json` for Cursor).
 
-### Using Commands
-
-Cursor supports custom commands that can be invoked directly in the chat interface. aicm can manage these command files
-alongside your rules and MCP configurations so they install automatically into Cursor.
-
-#### Local Commands
-
-Add a commands directory to your project configuration:
-
-```json
-{
-  "commandsDir": "./commands",
-  "targets": ["cursor"]
-}
-```
-
-Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appear in Cursor under the `/` command menu.
-
-#### Commands in Presets
-
-Presets can ship reusable command libraries in addition to rules:
-
-```json
-{
-  "rulesDir": "rules",
-  "commandsDir": "commands"
-}
-```
-
-Preset command files install alongside local ones in `.cursor/commands/aicm/` so they appear with concise paths inside Cursor.
-If multiple presets provide a command at the same relative path, aicm will warn during installation and use the version from the
-last preset listed in your configuration. Use `overrides` to explicitly choose a different definition when needed.
-
-#### Command Overrides
-
-Use the existing `overrides` field to customize or disable commands provided by presets:
-
-```json
-{
-  "presets": ["@team/dev-preset"],
-  "overrides": {
-    "legacy-command": false,
-    "custom-test": "./commands/test.md"
-  }
-}
-```
-
-### Notes
-
-- Generated rules are always placed in a subdirectory for deterministic cleanup and easy gitignore.
-- Users may add `.cursor/rules/aicm/` and `.aicm/` (for Windsurf/Codex) to `.gitignore` if they do not want to track generated rules.
-
 ### Overrides
 
-You can disable or replace specific rules provided by presets using the `overrides` field:
+You can disable or replace specific rules or commands provided by presets using the `overrides` field:
 
 ```json
 {
   "presets": ["@company/ai-rules"],
   "overrides": {
     "rule-from-preset-a": "./rules/override-rule.mdc",
-    "rule-from-preset-b": false
+    "rule-from-preset-b": false,
+    "legacy-command": false
   }
 }
 ```
-
-### Demo
-
-We'll install [an npm package](https://github.com/ranyitz/pirate-coding) containing a simple preset to demonstrate how aicm works.
-
-1. **Install the demo preset package**:
-
-```bash
-npm install --save-dev pirate-coding
-```
-
-2. **Create an `aicm.json` file** in your project:
-
-```bash
-echo '{ "presets": ["pirate-coding"] }' > aicm.json
-```
-
-3. **Install all rules & MCPs from your configuration**:
-
-```bash
-npx aicm install
-```
-
-This command installs all configured rules and MCPs to their IDE-specific locations.
-
-After installation, open Cursor and ask it to do something. Your AI assistant will respond with pirate-themed coding advice. You can also ask it about the aicm library which uses https://gitmcp.io/ to give you advice based on the latest documentation.
-
-## Security Note
-
-To prevent [prompt-injection](https://en.wikipedia.org/wiki/Prompt_injection), use only packages from trusted sources.
 
 ## Workspaces Support
 
@@ -229,17 +240,14 @@ You can enable workspaces mode by setting the `workspaces` property to `true` in
 }
 ```
 
-aicm automatically detects workspaces if your `package.json` contains a `workspaces` configuration:
+aicm automatically detects workspaces if your `package.json` contains a `workspaces` configuration.
 
 ### How It Works
 
-1. **Discover packages**: Automatically find all directories containing `aicm.json` files in your repository
-2. **Install per package**: Install rules and MCPs for each package individually in their respective directories
-3. **Merge MCP servers**: Write a merged `.cursor/mcp.json` at the repository root containing all MCP servers from every package
-
-### How It Works
-
-Each directory containing an `aicm.json` file is treated as a separate package with its own configuration.
+1. **Discover packages**: Automatically find all directories containing `aicm.json` files in your repository.
+2. **Install per package**: Install rules and MCPs for each package individually in their respective directories.
+3. **Merge MCP servers**: Write a merged `.cursor/mcp.json` at the repository root containing all MCP servers from every package.
+4. **Merge commands**: Write a merged `.cursor/commands/aicm/` at the repository root containing all commands from every package.
 
 For example, in a workspace structure like:
 
@@ -300,17 +308,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 - **workspaces**: Set to `true` to enable workspace mode. If not specified, aicm will automatically detect workspaces from your `package.json`.
 - **skipInstall**: Set to `true` to skip rule installation for this package. Useful for preset packages that provide rules but shouldn't have rules installed into them.
 
-### MCP Server Installation
-
-- **Cursor**: MCP server configs are written to `.cursor/mcp.json`.
-
-## Supported Targets
-
-- **Cursor**: Rules are installed as individual `.mdc` files in the Cursor rules directory (`.cursor/rules/aicm/`), mcp servers are installed to `.cursor/mcp.json`
-- **Windsurf**: Rules are installed in the `.aicm` directory which should be added to your `.gitignore` file. Our approach for Windsurf is to create links from the `.windsurfrules` file to the respective rules in the `.aicm` directory. There is no support for local mcp servers at the moment.
-- **Codex**: Rules are installed in the `.aicm` directory and referenced from `AGENTS.md`.
-
-## Commands
+## CLI Commands
 
 ### Global Options
 
@@ -373,27 +371,9 @@ install({
 });
 ```
 
-### API Reference
+## Security Note
 
-#### `install(options?: InstallOptions): Promise<InstallResult>`
-
-Installs rules and MCP servers based on configuration.
-
-**Options:**
-
-- `cwd`: Base directory to use instead of `process.cwd()`
-- `config`: Custom config object to use instead of loading from file
-- `installOnCI`: Run installation on CI environments (default: `false`)
-- `verbose`: Show verbose output and stack traces for debugging (default: `false`)
-- `dryRun`: Simulate installation without writing files, useful for preset validation in CI (default: `false`)
-
-**Returns:**
-
-A Promise that resolves to an object with:
-
-- `success`: Whether the operation was successful
-- `error`: Error object if the operation failed
-- `installedRuleCount`: Number of rules installed
+To prevent [prompt-injection](https://en.wikipedia.org/wiki/Prompt_injection), use only packages from trusted sources.
 
 ## Contributing
 
