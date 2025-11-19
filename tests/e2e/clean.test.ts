@@ -84,3 +84,28 @@ test("clean with nothing to clean", async () => {
   expect(code).toBe(0);
   expect(stdout).toContain("Nothing to clean");
 });
+
+test("clean removes empty directories and mcp.json", async () => {
+  await setupFromFixture("single-rule");
+
+  // Install first
+  await runCommand("install --ci");
+
+  // Verify installed
+  expect(
+    fileExists(path.join(".cursor", "rules", "aicm", "test-rule.mdc")),
+  ).toBe(true);
+  expect(fileExists(path.join(".cursor", "mcp.json"))).toBe(true);
+
+  // Run clean
+  const { code } = await runCommand("clean");
+
+  expect(code).toBe(0);
+
+  // Verify everything is removed including empty parent directories
+  expect(fileExists(path.join(".cursor", "rules", "aicm"))).toBe(false);
+  expect(fileExists(path.join(".cursor", "rules"))).toBe(false);
+  expect(fileExists(path.join(".cursor", "commands"))).toBe(false);
+  expect(fileExists(path.join(".cursor", "mcp.json"))).toBe(false);
+  expect(fileExists(path.join(".cursor"))).toBe(false);
+});

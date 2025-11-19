@@ -88,15 +88,52 @@ function cleanMcpServers(cwd: string, verbose: boolean): boolean {
 
     if (!hasChanges) return false;
 
-    content.mcpServers = newMcpServers;
-    fs.writeJsonSync(mcpPath, content, { spaces: 2 });
-    if (verbose)
-      console.log(chalk.gray(`  Cleaned aicm MCP servers from ${mcpPath}`));
+    // If no servers remain and no other properties, remove the file
+    if (
+      Object.keys(newMcpServers).length === 0 &&
+      Object.keys(content).length === 1
+    ) {
+      fs.removeSync(mcpPath);
+      if (verbose) console.log(chalk.gray(`  Removed empty ${mcpPath}`));
+    } else {
+      content.mcpServers = newMcpServers;
+      fs.writeJsonSync(mcpPath, content, { spaces: 2 });
+      if (verbose)
+        console.log(chalk.gray(`  Cleaned aicm MCP servers from ${mcpPath}`));
+    }
     return true;
   } catch {
     console.warn(chalk.yellow(`Warning: Failed to clean MCP servers`));
     return false;
   }
+}
+
+function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
+  let cleanedCount = 0;
+
+  const dirsToCheck = [
+    path.join(cwd, ".cursor", "rules"),
+    path.join(cwd, ".cursor", "commands"),
+    path.join(cwd, ".cursor"),
+  ];
+
+  for (const dir of dirsToCheck) {
+    if (fs.existsSync(dir)) {
+      try {
+        const contents = fs.readdirSync(dir);
+        if (contents.length === 0) {
+          fs.removeSync(dir);
+          if (verbose)
+            console.log(chalk.gray(`  Removed empty directory ${dir}`));
+          cleanedCount++;
+        }
+      } catch {
+        // Ignore errors when checking/removing empty directories
+      }
+    }
+  }
+
+  return cleanedCount;
 }
 
 export async function cleanPackage(
@@ -132,6 +169,9 @@ export async function cleanPackage(
 
     // Clean MCP servers
     if (cleanMcpServers(cwd, verbose)) cleanedCount++;
+
+    // Clean empty directories
+    cleanedCount += cleanEmptyDirectories(cwd, verbose);
 
     return {
       success: true,
