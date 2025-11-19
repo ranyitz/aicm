@@ -52,6 +52,23 @@ const WARNING =
   "<!-- WARNING: Everything between these markers will be overwritten during installation -->";
 
 /**
+ * Remove the rules block from the content
+ */
+export function removeRulesBlock(content: string): string {
+  // Check if our markers exist
+  if (content.includes(RULES_BEGIN) && content.includes(RULES_END)) {
+    const parts = content.split(RULES_BEGIN);
+    const beforeMarker = parts[0];
+    const afterParts = parts[1].split(RULES_END);
+    const afterMarker = afterParts.slice(1).join(RULES_END); // In case RULES_END appears multiple times (unlikely but safe)
+
+    return (beforeMarker + afterMarker).trim();
+  }
+
+  return content;
+}
+
+/**
  * Create a formatted block of content with rules markers
  */
 function createRulesBlock(rulesContent: string): string {

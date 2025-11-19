@@ -5,6 +5,7 @@ import chalk from "chalk";
 import { initCommand } from "./commands/init";
 import { installCommand } from "./commands/install";
 import { listCommand } from "./commands/list";
+import { cleanCommand } from "./commands/clean";
 
 // Define version from package.json
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -56,6 +57,9 @@ export async function runCli() {
       case "list":
         await listCommand();
         break;
+      case "clean":
+        await cleanCommand(args["--verbose"]);
+        break;
       default:
         showHelp();
         break;
@@ -77,6 +81,7 @@ ${chalk.bold("COMMANDS")}
   init                Initialize a new aicm configuration file
   install             Install rules from configured sources
   list                List all configured rules and their status
+  clean               Remove all files and directories created by aicm
 
 ${chalk.bold("OPTIONS")}
   -h, --help          Show this help message
