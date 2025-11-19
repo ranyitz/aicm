@@ -146,4 +146,27 @@ describe("command installation", () => {
       "Run shared workspace tests.",
     );
   });
+
+  test("preserves subdirectory structure in command asset links", async () => {
+    await setupFromFixture("commands-subdirectory-links");
+
+    const { code } = await runCommand("install --ci");
+    expect(code).toBe(0);
+
+    const commandPath = ".cursor/commands/aicm/example.md";
+    expect(fileExists(commandPath)).toBe(true);
+
+    const commandContent = readTestFile(commandPath);
+
+    // Links should preserve subdirectory structure like category-a/ and deep/nested/structure/
+    expect(commandContent).toContain(
+      "[First asset in subdirectory](../../rules/aicm/category-a/asset-one.mjs)",
+    );
+    expect(commandContent).toContain(
+      "[Second asset in subdirectory](../../rules/aicm/category-a/asset-two.mjs)",
+    );
+    expect(commandContent).toContain(
+      "[Deeply nested asset](../../rules/aicm/deep/nested/structure/config.json)",
+    );
+  });
 });

@@ -1,0 +1,5 @@
+{
+  "rulesDir": "rules",
+  "commandsDir": "commands",
+  "targets": ["cursor"]
+}
