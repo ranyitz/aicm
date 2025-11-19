@@ -139,10 +139,12 @@ function rewriteCommandRelativeLinks(content: string): string {
 
     // Check if it's a link to the rules directory
     if (url.includes("rules/")) {
-      const parts = url.split("/");
-      const filename = parts[parts.length - 1];
+      // Find the index of "rules/" and extract everything after it
+      // This preserves subdirectory structure like "deeply/nested/path/"
+      const rulesIndex = url.indexOf("rules/");
+      const pathAfterRules = url.substring(rulesIndex + "rules/".length);
 
-      return `[${text}](../../rules/aicm/${filename})`;
+      return `[${text}](../../rules/aicm/${pathAfterRules})`;
     }
     return match;
   });
