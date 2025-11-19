@@ -158,7 +158,7 @@ describe("command installation", () => {
 
     const commandContent = readTestFile(commandPath);
 
-    // Links should preserve subdirectory structure like category-a/ and deep/nested/structure/
+    // Markdown links should be rewritten with subdirectory structure preserved
     expect(commandContent).toContain(
       "[First asset in subdirectory](../../rules/aicm/category-a/asset-one.mjs)",
     );
@@ -168,5 +168,24 @@ describe("command installation", () => {
     expect(commandContent).toContain(
       "[Deeply nested asset](../../rules/aicm/deep/nested/structure/config.json)",
     );
+
+    // Inline code references should be rewritten (filesystem-based detection)
+    expect(commandContent).toContain(
+      "`node ../../rules/aicm/category-a/asset-one.mjs`",
+    );
+    expect(commandContent).toContain(
+      "`../../rules/aicm/category-a/asset-two.mjs`",
+    );
+
+    // Bare path references should be rewritten
+    expect(commandContent).toContain(
+      "You can also run: ../../rules/aicm/deep/nested/structure/config.json",
+    );
+
+    // Code blocks should NOT be rewritten (contains example paths)
+    expect(commandContent).toContain("../rules/example/fake.js");
+
+    // Non-existent paths should NOT be rewritten
+    expect(commandContent).toContain("../rules/nonexistent/file.js");
   });
 });
