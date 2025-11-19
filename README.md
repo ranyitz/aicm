@@ -343,6 +343,14 @@ Options:
 - `--verbose`: show detailed output and stack traces for debugging
 - `--dry-run`: simulate installation without writing files, useful for validating presets in CI
 
+### `clean`
+
+Removes all files, directories & changes made by aicm.
+
+```bash
+npx aicm clean
+```
+
 ## Node.js API
 
 In addition to the CLI, aicm can be used programmatically in Node.js applications:
