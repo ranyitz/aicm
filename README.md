@@ -213,6 +213,8 @@ Use the schema defined in [Schema Template](../rules/schema.json) to generate th
 
 When installed, `aicm` will automatically rewrite the link to point to the correct location of `schema.json` in the target environment (e.g., `../../rules/aicm/schema.json` for Cursor).
 
+> **Note:** Path rewriting works for any relative path format in your commands - markdown links, inline code references, or bare paths - as long as they point to actual files in your `rulesDir`.
+
 ### Overrides
 
 You can disable or replace specific rules or commands provided by presets using the `overrides` field:

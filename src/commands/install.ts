@@ -109,6 +109,7 @@ function writeCursorRules(rules: RuleFile[], cursorRulesDir: string): void {
 function writeCursorCommands(
   commands: CommandFile[],
   cursorCommandsDir: string,
+  assets: AssetFile[],
 ): void {
   fs.removeSync(cursorCommandsDir);
 
@@ -126,27 +127,30 @@ function writeCursorCommands(
     // Rules/assets are installed in .cursor/rules/aicm/
     // So a link like "../rules/asset.json" in source (from commands/ to rules/)
     // needs to become "../../rules/aicm/asset.json" in target (from .cursor/commands/aicm/ to .cursor/rules/aicm/)
-    const content = rewriteCommandRelativeLinks(command.content);
+    const content = rewriteCommandRelativeLinks(
+      command.content,
+      command.sourcePath,
+      assets,
+    );
     fs.writeFileSync(commandFile, content);
   }
 }
 
-function rewriteCommandRelativeLinks(content: string): string {
-  return content.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (match, text, url) => {
-    if (url.startsWith("http") || url.startsWith("#") || url.startsWith("/")) {
-      return match;
-    }
+function rewriteCommandRelativeLinks(
+  content: string,
+  commandSourcePath: string,
+  assets: AssetFile[],
+): string {
+  const commandDir = path.dirname(commandSourcePath);
+  const assetMap = new Map(
+    assets.map((a) => [path.normalize(a.sourcePath), a.name]),
+  );
 
-    // Check if it's a link to the rules directory
-    if (url.includes("rules/")) {
-      // Find the index of "rules/" and extract everything after it
-      // This preserves subdirectory structure like "deeply/nested/path/"
-      const rulesIndex = url.indexOf("rules/");
-      const pathAfterRules = url.substring(rulesIndex + "rules/".length);
-
-      return `[${text}](../../rules/aicm/${pathAfterRules})`;
-    }
-    return match;
+  return content.replace(/\.\.[/\\][\w\-/\\.]+/g, (match) => {
+    const resolved = path.normalize(path.resolve(commandDir, match));
+    return assetMap.has(resolved)
+      ? `../../rules/aicm/${assetMap.get(resolved)}`
+      : match;
   });
 }
 
@@ -299,6 +303,7 @@ function writeRulesToTargets(
 
 function writeCommandsToTargets(
   commands: CommandFile[],
+  assets: AssetFile[],
   targets: SupportedTarget[],
 ): void {
   const projectDir = process.cwd();
@@ -308,7 +313,7 @@ function writeCommandsToTargets(
     if (target === "cursor") {
       const commandsDir = path.join(cursorRoot, "commands", "aicm");
 
-      writeCursorCommands(commands, commandsDir);
+      writeCursorCommands(commands, commandsDir, assets);
     }
     // Other targets do not support commands yet
   }
@@ -631,6 +636,7 @@ export async function installPackage(
 
         writeCommandsToTargets(
           commandsToInstall,
+          assets,
           config.targets as SupportedTarget[],
         );
 
@@ -827,7 +833,14 @@ async function installWorkspaces(
       const dedupedWorkspaceCommands =
         dedupeCommandsForInstall(workspaceCommands);
 
-      writeCommandsToTargets(dedupedWorkspaceCommands, workspaceCommandTargets);
+      // Collect all assets from packages for command path rewriting
+      const allAssets = packages.flatMap((pkg) => pkg.config.assets ?? []);
+
+      writeCommandsToTargets(
+        dedupedWorkspaceCommands,
+        allAssets,
+        workspaceCommandTargets,
+      );
     }
 
     const { merged: rootMcp, conflicts } = mergeWorkspaceMcpServers(packages);
