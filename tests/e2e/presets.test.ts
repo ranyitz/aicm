@@ -210,3 +210,32 @@ test("install rules from preset only (no rulesDir)", async () => {
     "TypeScript Best Practices (Preset Only)",
   );
 });
+
+test("rewrite command links to preset assets with correct namespace", async () => {
+  await setupFromFixture("preset-commands-assets");
+
+  const { code } = await runCommand("install --ci");
+  expect(code).toBe(0);
+
+  const assetPath = path.join(
+    ".cursor",
+    "rules",
+    "aicm",
+    "my-preset",
+    "config.json",
+  );
+  expect(fileExists(assetPath)).toBe(true);
+
+  const commandPath = path.join(".cursor", "commands", "aicm", "setup.md");
+  expect(fileExists(commandPath)).toBe(true);
+
+  const commandContent = readTestFile(commandPath);
+
+  expect(commandContent).toContain(
+    "[config.json](../../rules/aicm/my-preset/config.json)",
+  );
+  expect(commandContent).toContain("`../../rules/aicm/my-preset/config.json`");
+  expect(commandContent).toContain(
+    "Check the file at ../../rules/aicm/my-preset/config.json for more details",
+  );
+});
