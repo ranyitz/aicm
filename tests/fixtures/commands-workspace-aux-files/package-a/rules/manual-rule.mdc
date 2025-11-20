@@ -1,0 +1,4 @@
+# Manual Rule
+
+This is a manual rule with no frontmatter metadata.
+It should not trigger a warning when referenced by a command.

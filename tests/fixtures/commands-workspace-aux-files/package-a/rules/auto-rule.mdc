@@ -1,0 +1,8 @@
+---
+alwaysApply: true
+---
+
+# Auto Rule
+
+This is an automatic rule that always applies.
+It should trigger a warning when referenced by a command.
