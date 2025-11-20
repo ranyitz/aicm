@@ -188,4 +188,54 @@ describe("command installation", () => {
     // Non-existent paths should NOT be rewritten
     expect(commandContent).toContain("../rules/nonexistent/file.js");
   });
+
+  test("copies auxiliary files referenced by commands in workspace mode", async () => {
+    await setupFromFixture("commands-workspace-aux-files");
+
+    const { stderr, code } = await runCommand("install --ci --verbose");
+    expect(code).toBe(0);
+
+    // Check that command was installed at root
+    expect(fileExists(".cursor/commands/aicm/test.md")).toBe(true);
+
+    // Check that auxiliary files were copied to root .cursor/rules/aicm/
+    expect(fileExists(".cursor/rules/aicm/helper.js")).toBe(true);
+    expect(fileExists(".cursor/rules/aicm/manual-rule.mdc")).toBe(true);
+    expect(fileExists(".cursor/rules/aicm/auto-rule.mdc")).toBe(true);
+
+    // Verify the content of the copied files
+    const helperContent = readTestFile(".cursor/rules/aicm/helper.js");
+    expect(helperContent).toContain("Helper script executed");
+
+    const manualRuleContent = readTestFile(
+      ".cursor/rules/aicm/manual-rule.mdc",
+    );
+    expect(manualRuleContent).toContain("Manual Rule");
+
+    const autoRuleContent = readTestFile(".cursor/rules/aicm/auto-rule.mdc");
+    expect(autoRuleContent).toContain("Auto Rule");
+
+    // Check that warning was issued for auto-rule.mdc (non-manual rule)
+    // console.warn writes to stderr
+    expect(stderr).toContain(
+      'Warning: Command references non-manual rule file "auto-rule.mdc"',
+    );
+    expect(stderr).toContain(
+      "This may cause the rule to be included twice in the context",
+    );
+
+    // Verify that links were rewritten in the root command
+    const rootCommandContent = readTestFile(".cursor/commands/aicm/test.md");
+    expect(rootCommandContent).toContain(
+      "[Manual Rule](../../rules/aicm/manual-rule.mdc)",
+    );
+    expect(rootCommandContent).toContain(
+      "[Auto Rule](../../rules/aicm/auto-rule.mdc)",
+    );
+    expect(rootCommandContent).toContain("`node ../../rules/aicm/helper.js`");
+    expect(rootCommandContent).toContain("../../rules/aicm/helper.js");
+
+    // Also check that files were installed in the package directory
+    expect(fileExists("package-a/.cursor/commands/aicm/test.md")).toBe(true);
+  });
 });

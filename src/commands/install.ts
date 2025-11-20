@@ -180,6 +180,172 @@ function extractNamespaceFromPresetPath(presetPath: string): string[] {
 }
 
 /**
+ * Extract .mdc file references from a command for warning purposes
+ * Returns absolute paths to .mdc files that are referenced
+ */
+function extractMdcReferences(
+  content: string,
+  commandSourcePath: string,
+): string[] {
+  const commandDir = path.dirname(commandSourcePath);
+  const mdcFiles: string[] = [];
+  const seenPaths = new Set<string>();
+
+  // Same regex pattern as rewriteCommandRelativeLinks
+  const matches = content.matchAll(/\.\.[/\\][\w\-/\\.]+/g);
+
+  for (const match of matches) {
+    const relativePath = match[0];
+    const resolved = path.normalize(path.resolve(commandDir, relativePath));
+
+    // Only process .mdc files that exist
+    if (
+      resolved.endsWith(".mdc") &&
+      !seenPaths.has(resolved) &&
+      fs.existsSync(resolved) &&
+      fs.statSync(resolved).isFile()
+    ) {
+      seenPaths.add(resolved);
+      mdcFiles.push(resolved);
+    }
+  }
+
+  return mdcFiles;
+}
+
+/**
+ * Check if a .mdc file is a manual rule (not automatic/auto-attached/agent-requested)
+ */
+function isManualRule(content: string): boolean {
+  const metadata = parseRuleFrontmatter(content);
+
+  // Check for always rules
+  if (
+    metadata.type === "always" ||
+    metadata.alwaysApply === true ||
+    metadata.alwaysApply === "true"
+  ) {
+    return false;
+  }
+
+  // Check for auto-attached rules
+  if (metadata.type === "auto-attached" || metadata.globs) {
+    return false;
+  }
+
+  // Check for agent-requested rules
+  if (metadata.type === "agent-requested" || metadata.description) {
+    return false;
+  }
+
+  // Default to manual rule
+  return true;
+}
+
+/**
+ * Process .mdc files referenced by commands in workspace mode
+ * Warns about non-manual rules and copies them to root for command access
+ */
+function processMdcFilesForWorkspace(
+  mdcFilePaths: Set<string>,
+  commands: CommandFile[],
+  packages: Array<{
+    relativePath: string;
+    absolutePath: string;
+    config: ResolvedConfig;
+  }>,
+  rootDir: string,
+): AssetFile[] {
+  const mdcAssets: AssetFile[] = [];
+
+  // Build a map of command source paths to their preset names
+  const commandPresetMap = new Map<string, string | undefined>();
+  for (const command of commands) {
+    const commandDir = path.dirname(command.sourcePath);
+    commandPresetMap.set(commandDir, command.presetName);
+  }
+
+  for (const mdcPath of mdcFilePaths) {
+    const content = fs.readFileSync(mdcPath, "utf8");
+
+    if (!isManualRule(content)) {
+      const relativePath = path.basename(mdcPath);
+      console.warn(
+        chalk.yellow(
+          `Warning: Command references non-manual rule file "${relativePath}". ` +
+            `This may cause the rule to be included twice in the context. ` +
+            `Consider using manual rules (without alwaysApply, globs, or description metadata) ` +
+            `when referencing from commands.`,
+        ),
+      );
+    }
+
+    // Find which command references this .mdc file and get its preset name
+    let mdcAssetName = "";
+    let presetName: string | undefined;
+    let found = false;
+
+    // First check packages for local files
+    for (const pkg of packages) {
+      const rulesDir = pkg.config.config.rulesDir;
+      if (rulesDir) {
+        const pkgRulesPath = path.join(pkg.absolutePath, rulesDir);
+        if (mdcPath.startsWith(pkgRulesPath)) {
+          mdcAssetName = path.relative(pkgRulesPath, mdcPath);
+          found = true;
+          break;
+        }
+      }
+    }
+
+    // If not found in local packages, it might be from a preset
+    if (!found) {
+      // Find the command that references this .mdc file
+      for (const command of commands) {
+        if (command.presetName) {
+          const commandDir = path.dirname(command.sourcePath);
+          const rulesDir = path.join(path.dirname(commandDir), "rules");
+
+          if (mdcPath.startsWith(rulesDir)) {
+            mdcAssetName = path.relative(rulesDir, mdcPath);
+            presetName = command.presetName;
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (found) {
+      // Build the final asset name with preset namespace if applicable
+      const finalAssetName = presetName
+        ? path.posix.join(
+            ...extractNamespaceFromPresetPath(presetName),
+            mdcAssetName.replace(/\\/g, "/"),
+          )
+        : mdcAssetName.replace(/\\/g, "/");
+
+      // Create an AssetFile entry for the .mdc file
+      mdcAssets.push({
+        name: finalAssetName,
+        content: Buffer.from(content),
+        sourcePath: mdcPath,
+        source: presetName ? "preset" : "local",
+        presetName,
+      });
+
+      // Copy to root .cursor/rules/aicm/
+      const cursorRulesDir = path.join(rootDir, ".cursor", "rules", "aicm");
+      const targetPath = path.join(cursorRulesDir, finalAssetName);
+      fs.ensureDirSync(path.dirname(targetPath));
+      fs.writeFileSync(targetPath, content);
+    }
+  }
+
+  return mdcAssets;
+}
+
+/**
  * Write rules to a shared directory and update the given rules file
  */
 function writeRulesForFile(
@@ -787,9 +953,33 @@ async function installWorkspaces(
       // Collect all assets from packages for command path rewriting
       const allAssets = packages.flatMap((pkg) => pkg.config.assets ?? []);
 
+      // Copy assets to root so root commands can reference them
+      writeAssetsToTargets(allAssets, workspaceCommandTargets);
+
+      // Extract and process .mdc file references from commands
+      const mdcFilesSet = new Set<string>();
+
+      for (const command of dedupedWorkspaceCommands) {
+        const mdcRefs = extractMdcReferences(
+          command.content,
+          command.sourcePath,
+        );
+        mdcRefs.forEach((ref) => mdcFilesSet.add(ref));
+      }
+
+      const mdcAssets = processMdcFilesForWorkspace(
+        mdcFilesSet,
+        dedupedWorkspaceCommands,
+        packages,
+        cwd,
+      );
+
+      // Merge .mdc assets with regular assets for link rewriting
+      const allAssetsWithMdc = [...allAssets, ...mdcAssets];
+
       writeCommandsToTargets(
         dedupedWorkspaceCommands,
-        allAssets,
+        allAssetsWithMdc,
         workspaceCommandTargets,
       );
     }
