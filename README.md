@@ -215,6 +215,17 @@ When installed, `aicm` will automatically rewrite the link to point to the corre
 
 > **Note:** Path rewriting works for any relative path format in your commands - markdown links, inline code references, or bare paths - as long as they point to actual files in your `rulesDir`.
 
+#### usage in workspaces mode
+
+When using workspaces, commands installed at the monorepo root need to access auxiliary files located in nested packages (e.g., `packages/frontend/rules/helper.js`).
+
+`aicm` handles this automatically by:
+
+1. Copying referenced auxiliary files from nested packages to the root `.cursor/rules/aicm/` directory
+2. Rewriting paths in the root command to point to these copied files
+
+**Warning:** If your command references a `.mdc` file (Cursor rule), `aicm` will check if it's a "manual" rule or an "automatic" rule (one that is always applied or auto-attached via globs). If it's an automatic rule, `aicm` will warn you that copying it to the root might cause the rule to be included twice in the context (once from the nested package and once from the root copy). For best results, only reference manual `.mdc` files or other file types (like `.js`, `.json`, `.md`) from commands.
+
 ### Overrides
 
 You can disable or replace specific rules or commands provided by presets using the `overrides` field:
@@ -270,6 +281,12 @@ Running `npx aicm install` will install rules for each package in their respecti
 - `packages/frontend/.cursor/rules/aicm/`
 - `packages/backend/.cursor/rules/aicm/`
 - `services/api/.cursor/rules/aicm/`
+
+**Why install in both places?**
+`aicm` installs configurations at both the package level AND the root level to support different workflows:
+
+- **Package-level context:** When a developer opens a specific package folder (e.g., `packages/frontend`) in their IDE, they get the specific rules, commands, and MCP servers for that package.
+- **Root-level context:** When a developer opens the monorepo root, `aicm` ensures they have access to all commands and MCP servers from all packages via the merged root configuration. While rules are typically read from nested directories by Cursor, commands and MCP servers must be configured at the root to be accessible.
 
 ### Preset Packages in Workspaces
 
