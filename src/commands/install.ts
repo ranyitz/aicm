@@ -148,9 +148,11 @@ function rewriteCommandRelativeLinks(
       let targetPath: string;
       if (a.presetName) {
         const namespace = extractNamespaceFromPresetPath(a.presetName);
-        targetPath = [...namespace, a.name].join("/");
+        // Use posix paths for URLs/links (always forward slashes)
+        targetPath = path.posix.join(...namespace, a.name);
       } else {
-        targetPath = a.name;
+        // Normalize to posix for consistent forward slashes in links
+        targetPath = a.name.split(path.sep).join(path.posix.sep);
       }
       return [path.normalize(a.sourcePath), targetPath];
     }),
