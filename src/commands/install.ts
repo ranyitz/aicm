@@ -142,8 +142,20 @@ function rewriteCommandRelativeLinks(
   assets: AssetFile[],
 ): string {
   const commandDir = path.dirname(commandSourcePath);
+
   const assetMap = new Map(
-    assets.map((a) => [path.normalize(a.sourcePath), a.name]),
+    assets.map((a) => {
+      let targetPath: string;
+      if (a.presetName) {
+        const namespace = extractNamespaceFromPresetPath(a.presetName);
+        // Use posix paths for URLs/links (always forward slashes)
+        targetPath = path.posix.join(...namespace, a.name);
+      } else {
+        // Normalize to posix for consistent forward slashes in links
+        targetPath = a.name.split(path.sep).join(path.posix.sep);
+      }
+      return [path.normalize(a.sourcePath), targetPath];
+    }),
   );
 
   return content.replace(/\.\.[/\\][\w\-/\\.]+/g, (match) => {
