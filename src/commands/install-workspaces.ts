@@ -2,6 +2,7 @@ import chalk from "chalk";
 import fs from "fs-extra";
 import path from "node:path";
 import {
+  extractNamespaceFromPresetPath,
   ResolvedConfig,
   CommandFile,
   AssetFile,
@@ -26,7 +27,6 @@ import {
   writeAssetsToTargets,
   warnPresetCommandCollisions,
   dedupeCommandsForInstall,
-  extractNamespaceFromPresetPath,
   writeMcpServersToFile,
 } from "./install";
 

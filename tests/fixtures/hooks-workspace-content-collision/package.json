@@ -1,0 +1,7 @@
+{
+  "name": "hooks-workspace-md5",
+  "workspaces": [
+    "package-a",
+    "package-b"
+  ]
+}

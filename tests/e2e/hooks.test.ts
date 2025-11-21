@@ -50,25 +50,25 @@ describe("hooks installation", () => {
 
     expect(stdout).toContain("Successfully installed 2 hooks");
 
-    // Check hooks.json
+    // Check hooks.json - preset hooks should be namespaced in directories
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.version).toBe(1);
     expect(hooksJson.hooks.beforeMCPExecution).toEqual([
-      { command: "./hooks/aicm/validate.sh" },
+      { command: "./hooks/aicm/preset/validate.sh" },
     ]);
     expect(hooksJson.hooks.afterMCPExecution).toEqual([
-      { command: "./hooks/aicm/track.js" },
+      { command: "./hooks/aicm/preset/track.js" },
     ]);
 
-    // Check files were copied
-    expect(fileExists(".cursor/hooks/aicm/validate.sh")).toBe(true);
-    expect(fileExists(".cursor/hooks/aicm/track.js")).toBe(true);
+    // Check files were copied with directory structure
+    expect(fileExists(".cursor/hooks/aicm/preset/validate.sh")).toBe(true);
+    expect(fileExists(".cursor/hooks/aicm/preset/track.js")).toBe(true);
 
     // Verify content
-    expect(readTestFile(".cursor/hooks/aicm/validate.sh")).toContain(
+    expect(readTestFile(".cursor/hooks/aicm/preset/validate.sh")).toContain(
       "Validating...",
     );
-    expect(readTestFile(".cursor/hooks/aicm/track.js")).toContain(
+    expect(readTestFile(".cursor/hooks/aicm/preset/track.js")).toContain(
       "Tracking plan...",
     );
   });
@@ -85,13 +85,14 @@ describe("hooks installation", () => {
     expect(hooksJson.hooks.beforeShellExecution).toEqual([
       { command: "./hooks/aicm/local-hook.sh" },
     ]);
+    // Preset hooks should be namespaced in directories
     expect(hooksJson.hooks.afterFileEdit).toEqual([
-      { command: "./hooks/aicm/preset-hook.js" },
+      { command: "./hooks/aicm/preset/preset-hook.js" },
     ]);
 
-    // Both files should be present
+    // Both files should be present (preset file in directory)
     expect(fileExists(".cursor/hooks/aicm/local-hook.sh")).toBe(true);
-    expect(fileExists(".cursor/hooks/aicm/preset-hook.js")).toBe(true);
+    expect(fileExists(".cursor/hooks/aicm/preset/preset-hook.js")).toBe(true);
   });
 
   test("installs hooks in workspace mode", async () => {
@@ -140,9 +141,9 @@ describe("hooks installation", () => {
 
     // Check for warning about file collision
     expect(stderr).toContain(
-      'Warning: Multiple hook files with name "audit.sh" have different content',
+      'Warning: Multiple hook files with path "audit.sh" have different content',
     );
-    expect(stderr).toContain("This may indicate a configuration issue");
+    expect(stderr).toContain("Using last occurrence");
 
     // Only one audit.sh should be installed (last writer wins)
     const structure = getDirectoryStructure(".cursor/hooks");
@@ -256,5 +257,61 @@ describe("hooks installation", () => {
     // Should not create any files
     expect(fileExists(".cursor/hooks.json")).toBe(false);
     expect(fileExists(".cursor/hooks/aicm")).toBe(false);
+  });
+
+  test("allows same basename from different presets with namespacing", async () => {
+    await setupFromFixture("hooks-preset-collision");
+
+    const { stdout } = await runCommand("install --ci");
+
+    expect(stdout).toContain("Successfully installed 2 hooks");
+
+    const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
+
+    // Both presets have validate.sh for the same hook type, but they should be in separate directories
+    // and both should be present (concatenated)
+    expect(hooksJson.hooks.beforeShellExecution).toEqual([
+      { command: "./hooks/aicm/preset-a/validate.sh" },
+      { command: "./hooks/aicm/preset-b/validate.sh" },
+    ]);
+
+    // Both files should exist in their respective preset directories
+    expect(fileExists(".cursor/hooks/aicm/preset-a/validate.sh")).toBe(true);
+    expect(fileExists(".cursor/hooks/aicm/preset-b/validate.sh")).toBe(true);
+
+    // Verify they have different content
+    const presetAContent = readTestFile(
+      ".cursor/hooks/aicm/preset-a/validate.sh",
+    );
+    const presetBContent = readTestFile(
+      ".cursor/hooks/aicm/preset-b/validate.sh",
+    );
+    expect(presetAContent).toContain("preset-a");
+    expect(presetBContent).toContain("preset-b");
+  });
+
+  test("warns on content collision for same hook file in workspaces", async () => {
+    await setupFromFixture("hooks-workspace-content-collision");
+
+    const { stderr } = await runCommand("install --ci");
+
+    // Should warn about the same preset file with different content
+    // The warning will show the full namespaced path
+    expect(stderr).toContain(
+      'Warning: Multiple hook files with path "preset/check.sh"',
+    );
+    expect(stderr).toContain("have different content");
+    expect(stderr).toContain("Using last occurrence");
+
+    // Should still install hooks (last writer wins)
+    const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
+    expect(hooksJson.hooks.beforeShellExecution).toBeDefined();
+    expect(hooksJson.hooks.afterFileEdit).toBeDefined();
+
+    // Only one version of the file should exist (the last one)
+    expect(fileExists(".cursor/hooks/aicm/preset/check.sh")).toBe(true);
+    const content = readTestFile(".cursor/hooks/aicm/preset/check.sh");
+    // Should be the content from package-b (last writer wins)
+    expect(content).toContain("package-b");
   });
 });

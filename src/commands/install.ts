@@ -3,6 +3,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import {
   loadConfig,
+  extractNamespaceFromPresetPath,
   ResolvedConfig,
   RuleFile,
   CommandFile,
@@ -174,19 +175,6 @@ function rewriteCommandRelativeLinks(
       ? `../../rules/aicm/${assetMap.get(resolved)}`
       : match;
   });
-}
-
-export function extractNamespaceFromPresetPath(presetPath: string): string[] {
-  // Special case: npm package names always use forward slashes, regardless of platform
-  if (presetPath.startsWith("@")) {
-    // For scoped packages like @scope/package/subdir, create nested directories
-    return presetPath.split("/");
-  }
-
-  const parts = presetPath.split(path.sep);
-  return parts.filter(
-    (part) => part.length > 0 && part !== "." && part !== "..",
-  );
 }
 
 /**

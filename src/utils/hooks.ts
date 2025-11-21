@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "fs-extra";
 import path from "node:path";
+import { extractNamespaceFromPresetPath } from "./config";
 
 export type HookType =
   | "beforeShellExecution"
@@ -24,7 +25,8 @@ export interface HooksJson {
 }
 
 export interface HookFile {
-  name: string;
+  name: string; // Namespaced path for installation (e.g., "preset-name/script.sh" or "script.sh")
+  basename: string; // Original basename (e.g., "script.sh")
   content: Buffer;
   sourcePath: string;
   source: "local" | "preset";
@@ -74,10 +76,21 @@ export async function loadHooksFromFile(
               ) {
                 seenFiles.add(resolvedPath);
                 const fileContent = await fs.readFile(resolvedPath);
-                const fileName = path.basename(resolvedPath);
+                const basename = path.basename(resolvedPath);
+
+                // Namespace preset files using the same logic as rules
+                let namespacedPath: string;
+                if (source === "preset" && presetName) {
+                  const namespace = extractNamespaceFromPresetPath(presetName);
+                  // Use directory structure for namespacing: namespace/basename
+                  namespacedPath = path.join(...namespace, basename);
+                } else {
+                  namespacedPath = basename;
+                }
 
                 hookFiles.push({
-                  name: fileName,
+                  name: namespacedPath,
+                  basename,
                   content: fileContent,
                   sourcePath: resolvedPath,
                   source,
@@ -91,7 +104,56 @@ export async function loadHooksFromFile(
     }
   }
 
-  return { config: hooksConfig, files: hookFiles };
+  // Rewrite the config to use namespaced file names immediately
+  const rewrittenConfig = rewriteHooksConfigForFiles(hooksConfig, hookFiles);
+
+  return { config: rewrittenConfig, files: hookFiles };
+}
+
+/**
+ * Rewrite hooks config to use the namespaced names from the hook files
+ * This must be done per-source to maintain correct basename-to-namespace mapping
+ */
+function rewriteHooksConfigForFiles(
+  hooksConfig: HooksJson,
+  hookFiles: HookFile[],
+): HooksJson {
+  // Create a map from basename to the hookFile for this specific source
+  const basenameToFile = new Map<string, HookFile>();
+  for (const hookFile of hookFiles) {
+    basenameToFile.set(hookFile.basename, hookFile);
+  }
+
+  const rewritten: HooksJson = {
+    version: hooksConfig.version,
+    hooks: {},
+  };
+
+  if (hooksConfig.hooks) {
+    for (const hookType of Object.keys(hooksConfig.hooks) as HookType[]) {
+      const hookCommands = hooksConfig.hooks[hookType];
+      if (hookCommands && Array.isArray(hookCommands)) {
+        rewritten.hooks[hookType] = hookCommands.map((hookCommand) => {
+          const commandPath = hookCommand.command;
+          if (
+            commandPath &&
+            typeof commandPath === "string" &&
+            (commandPath.startsWith("./") || commandPath.startsWith("../"))
+          ) {
+            const basename = path.basename(commandPath);
+            const hookFile = basenameToFile.get(basename);
+            if (hookFile) {
+              // Use the namespaced name
+              return { command: hookFile.name };
+            }
+          }
+          return hookCommand;
+        });
+      }
+    }
+  }
+
+  return rewritten;
 }
 
 /**
@@ -132,50 +194,17 @@ export function mergeHooksConfigs(configs: HooksJson[]): HooksJson {
 }
 
 /**
- * Rewrite command paths in hooks config to point to managed hooks directory
+ * No-op function kept for compatibility
+ * Path rewriting now happens in loadHooksFromFile per-source
  */
-export function rewriteHooksConfigPaths(
-  hooksConfig: HooksJson,
-  hookFiles: HookFile[],
-): HooksJson {
-  // Create a map of basenames
-  const basenameMap = new Map<string, string>();
-  for (const hookFile of hookFiles) {
-    basenameMap.set(hookFile.name, hookFile.name);
-  }
-
-  const rewritten: HooksJson = {
-    version: hooksConfig.version,
-    hooks: {},
-  };
-
-  if (hooksConfig.hooks) {
-    for (const hookType of Object.keys(hooksConfig.hooks) as HookType[]) {
-      const hookCommands = hooksConfig.hooks[hookType];
-      if (hookCommands && Array.isArray(hookCommands)) {
-        rewritten.hooks[hookType] = hookCommands.map((hookCommand) => {
-          const commandPath = hookCommand.command;
-          if (
-            commandPath &&
-            typeof commandPath === "string" &&
-            (commandPath.startsWith("./") || commandPath.startsWith("../"))
-          ) {
-            const basename = path.basename(commandPath);
-            if (basenameMap.has(basename)) {
-              return { command: `./${basename}` };
-            }
-          }
-          return hookCommand;
-        });
-      }
-    }
-  }
-
-  return rewritten;
+export function rewriteHooksConfigPaths(hooksConfig: HooksJson): HooksJson {
+  // Paths are already rewritten to namespaced names in loadHooksFromFile
+  return hooksConfig;
 }
 
 /**
  * Rewrite command paths to point to the managed hooks directory (hooks/aicm/)
+ * At this point, paths are already namespaced filenames from loadHooksFromFile
  */
 export function rewriteHooksConfigToManagedDir(
   hooksConfig: HooksJson,
@@ -191,12 +220,8 @@ export function rewriteHooksConfigToManagedDir(
       if (hookCommands && Array.isArray(hookCommands)) {
         rewritten.hooks[hookType] = hookCommands.map((hookCommand) => {
           const commandPath = hookCommand.command;
-          if (
-            commandPath &&
-            typeof commandPath === "string" &&
-            commandPath.startsWith("./")
-          ) {
-            return { command: `./hooks/aicm/${commandPath.slice(2)}` };
+          if (commandPath && typeof commandPath === "string") {
+            return { command: `./hooks/aicm/${commandPath}` };
           }
           return hookCommand;
         });
@@ -231,27 +256,38 @@ function getMd5Hash(content: Buffer): string {
 }
 
 /**
- * Dedupe hook files by basename, warn on content conflicts
+ * Dedupe hook files by namespaced path, warn on content conflicts
+ * Presets are already namespaced with directories, so same basename from different presets won't collide
+ * For workspaces, we dedupe by full namespaced path and warn if MD5 hashes differ
  */
 export function dedupeHookFiles(hookFiles: HookFile[]): HookFile[] {
   const fileMap = new Map<string, { file: HookFile; hash: string }>();
 
   for (const hookFile of hookFiles) {
-    const basename = hookFile.name;
+    const namespacedPath = hookFile.name; // Already includes preset directory if applicable
     const hash = getMd5Hash(hookFile.content);
 
-    if (fileMap.has(basename)) {
-      const existing = fileMap.get(basename)!;
+    if (fileMap.has(namespacedPath)) {
+      const existing = fileMap.get(namespacedPath)!;
       if (existing.hash !== hash) {
+        const sourceInfo = hookFile.presetName
+          ? `from preset "${hookFile.presetName}"`
+          : `from ${hookFile.source}`;
+        const existingSourceInfo = existing.file.presetName
+          ? `from preset "${existing.file.presetName}"`
+          : `from ${existing.file.source}`;
+
         console.warn(
-          `Warning: Multiple hook files with name "${basename}" have different content. ` +
-            `This may indicate a configuration issue. Using last occurrence.`,
+          `Warning: Multiple hook files with path "${namespacedPath}" have different content:\n` +
+            `  - ${existingSourceInfo}: ${existing.file.sourcePath}\n` +
+            `  - ${sourceInfo}: ${hookFile.sourcePath}\n` +
+            `  Using last occurrence.`,
         );
       }
       // Last writer wins
-      fileMap.set(basename, { file: hookFile, hash });
+      fileMap.set(namespacedPath, { file: hookFile, hash });
     } else {
-      fileMap.set(basename, { file: hookFile, hash });
+      fileMap.set(namespacedPath, { file: hookFile, hash });
     }
   }
 
@@ -276,17 +312,16 @@ export function writeHooksToCursor(
   // Create hooks directory and clean it
   fs.emptyDirSync(hooksDir);
 
-  // Copy hook files to managed directory (basename only)
+  // Copy hook files to managed directory with proper directory structure
   for (const hookFile of dedupedHookFiles) {
     const targetPath = path.join(hooksDir, hookFile.name);
+    // Ensure parent directory exists for namespaced files (e.g., preset/file.sh)
+    fs.ensureDirSync(path.dirname(targetPath));
     fs.writeFileSync(targetPath, hookFile.content);
   }
 
   // Rewrite paths in hooks config to point to managed directory
-  const rewrittenConfig = rewriteHooksConfigPaths(
-    hooksConfig,
-    dedupedHookFiles,
-  );
+  const rewrittenConfig = rewriteHooksConfigPaths(hooksConfig);
   const finalConfig = rewriteHooksConfigToManagedDir(rewrittenConfig);
 
   // Read existing hooks.json if it exists

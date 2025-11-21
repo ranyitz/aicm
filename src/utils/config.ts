@@ -386,6 +386,23 @@ export async function loadAssetsFromDirectory(
   return assets;
 }
 
+/**
+ * Extract namespace from preset path for directory structure
+ * Handles both npm packages and local paths consistently
+ */
+export function extractNamespaceFromPresetPath(presetPath: string): string[] {
+  // Special case: npm package names always use forward slashes, regardless of platform
+  if (presetPath.startsWith("@")) {
+    // For scoped packages like @scope/package/subdir, create nested directories
+    return presetPath.split("/");
+  }
+
+  const parts = presetPath.split(path.sep);
+  return parts.filter(
+    (part) => part.length > 0 && part !== "." && part !== "..",
+  );
+}
+
 export function resolvePresetPath(
   presetPath: string,
   cwd: string,
