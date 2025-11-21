@@ -14,11 +14,11 @@ A CLI tool for managing Agentic configurations across projects.
   - [Creating a Preset](#creating-a-preset)
   - [Using a Preset](#using-a-preset)
 - [Features](#features)
-  - [Rules](#using-rules)
-  - [Commands](#using-commands)
-  - [Hooks](#using-hooks)
+  - [Rules](#rules)
+  - [Commands](#commands)
+  - [Hooks](#hooks)
   - [MCP Servers](#mcp-servers)
-  - [Auxiliary Files](#referencing-auxiliary-files)
+  - [Assets](#assets)
   - [Overrides](#overrides)
 - [Workspaces Support](#workspaces-support)
 - [Configuration](#configuration)
@@ -144,7 +144,7 @@ The rules are now installed in `.cursor/rules/aicm/` and any MCP servers are con
 
 ## Features
 
-### Using Rules
+### Rules
 
 aicm uses Cursor's `.mdc` files for rules. Read more about the format [here](https://cursor.com/docs/context/rules).
 
@@ -169,7 +169,7 @@ Configure your `aicm.json`:
 
 Rules are installed in `.cursor/rules/aicm/` and are loaded automatically by Cursor.
 
-### Using Commands
+### Commands
 
 Cursor supports custom commands that can be invoked directly in the chat interface. aicm can manage these command files alongside your rules and MCP configurations.
 
@@ -194,7 +194,7 @@ Configure your `aicm.json`:
 
 Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appear in Cursor under the `/` command menu.
 
-### Using Hooks
+### Hooks
 
 aicm provides first-class support for [Cursor Agent Hooks](https://docs.cursor.com/advanced/hooks), allowing you to intercept and extend the agent's behavior. Hooks enable you to run custom scripts before/after shell execution, file edits, MCP calls, and more.
 
@@ -299,7 +299,7 @@ You can configure MCP servers directly in your `aicm.json`, which is useful for 
 
 When installed, these servers are automatically added to your `.cursor/mcp.json`.
 
-### Using Assets
+### Assets
 
 You can include assets (examples, schemas, scripts, etc.) that can be referenced by your rules, commands, and hooks by placing them in the `assets/` directory.
 
