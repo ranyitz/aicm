@@ -1,7 +1,6 @@
 import {
   getDirectoryStructure,
   readTestFile,
-  fileExists,
   runCommand,
   setupFromFixture,
 } from "./helpers";
@@ -54,27 +53,6 @@ describe("command installation", () => {
     expect(readTestFile(".cursor/commands/aicm/test/run-tests.md")).toContain(
       "shared test suite",
     );
-  });
-
-  test("applies command overrides", async () => {
-    await setupFromFixture("commands-override");
-
-    const { stdout } = await runCommand("install --ci");
-
-    expect(stdout).toContain("Successfully installed 2 commands");
-
-    const structure = getDirectoryStructure(".cursor/commands");
-
-    expect(structure).toEqual([
-      ".cursor/commands/aicm/",
-      ".cursor/commands/aicm/keep.md",
-      ".cursor/commands/aicm/replace.md",
-    ]);
-
-    expect(readTestFile(".cursor/commands/aicm/replace.md")).toContain(
-      "project specific logic",
-    );
-    expect(fileExists(".cursor/commands/aicm/deprecated.md")).toBe(false);
   });
 
   test("warns when presets provide the same command", async () => {

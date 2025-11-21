@@ -19,7 +19,6 @@ A CLI tool for managing Agentic configurations across projects.
   - [Hooks](#hooks)
   - [MCP Servers](#mcp-servers)
   - [Assets](#assets)
-  - [Overrides](#overrides)
 - [Workspaces Support](#workspaces-support)
 - [Configuration](#configuration)
 - [CLI Commands](#cli-commands)
@@ -353,21 +352,6 @@ Check the example at `../assets/examples/response.json`.
     └── hooks.json
 ```
 
-### Overrides
-
-You can disable or replace specific rules or commands provided by presets using the `overrides` field:
-
-```json
-{
-  "presets": ["@company/ai-rules"],
-  "overrides": {
-    "rule-from-preset-a": "./rules/override-rule.mdc",
-    "rule-from-preset-b": false,
-    "legacy-command": false
-  }
-}
-```
-
 ## Workspaces Support
 
 aicm supports workspaces by automatically discovering and installing configurations across multiple packages in your repository.
@@ -438,7 +422,6 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
   "rootDir": "./",
   "targets": ["cursor"],
   "presets": [],
-  "overrides": {},
   "mcpServers": {},
   "skipInstall": false
 }
@@ -449,7 +432,6 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 - **rootDir**: Directory containing your aicm structure. Must contain one or more of: `rules/`, `commands/`, `assets/`, `hooks/`, or `hooks.json`. If not specified, aicm will only install rules from presets and will not pick up any local directories.
 - **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`. Supported targets: `cursor`, `windsurf`, `codex`, `claude`.
 - **presets**: List of preset packages or paths to include.
-- **overrides**: Map of rule names to `false` (disable) or a replacement file path.
 - **mcpServers**: MCP server configurations.
 - **workspaces**: Set to `true` to enable workspace mode. If not specified, aicm will automatically detect workspaces from your `package.json`.
 - **skipInstall**: Set to `true` to skip rule installation for this package. Useful for preset packages that provide rules but shouldn't have rules installed into them.

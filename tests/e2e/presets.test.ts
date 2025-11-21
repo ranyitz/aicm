@@ -160,34 +160,6 @@ test("handle errors with missing preset files", async () => {
   expect(stderr).toContain("Preset not found");
 });
 
-test("override a rule and mcpServer from a preset", async () => {
-  await setupFromFixture("presets-npm-override");
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 2 rules");
-
-  // Check that override rule was installed (not the original npm rule)
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "npm-rule.mdc")),
-  ).toBe(true);
-  const ruleContent = readTestFile(
-    path.join(".cursor", "rules", "aicm", "npm-rule.mdc"),
-  );
-  expect(ruleContent).toContain("Override Rule");
-
-  // Check that MCP server was overridden
-  const mcpPath = path.join(".cursor", "mcp.json");
-  expect(fileExists(mcpPath)).toBe(true);
-  const mcpConfig = JSON.parse(readTestFile(mcpPath));
-  expect(mcpConfig.mcpServers["preset-mcp"]).toMatchObject({
-    command: "./scripts/override-mcp.sh",
-    env: { MCP_TOKEN: "override" },
-    aicm: true,
-  });
-});
-
 test("install rules from preset only (no rootDir)", async () => {
   await setupFromFixture("presets-only");
 

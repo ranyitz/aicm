@@ -13,7 +13,6 @@ export interface RawConfig {
   rootDir?: string;
   targets?: string[];
   presets?: string[];
-  overrides?: Record<string, string | false>;
   mcpServers?: MCPServers;
   workspaces?: boolean;
   skipInstall?: boolean;
@@ -23,7 +22,6 @@ export interface Config {
   rootDir?: string;
   targets: string[];
   presets?: string[];
-  overrides?: Record<string, string | false>;
   mcpServers?: MCPServers;
   workspaces?: boolean;
   skipInstall?: boolean;
@@ -86,7 +84,6 @@ export const ALLOWED_CONFIG_KEYS = [
   "rootDir",
   "targets",
   "presets",
-  "overrides",
   "mcpServers",
   "workspaces",
   "skipInstall",
@@ -140,7 +137,6 @@ export function applyDefaults(config: RawConfig, workspaces: boolean): Config {
     rootDir: config.rootDir,
     targets: config.targets || ["cursor"],
     presets: config.presets || [],
-    overrides: config.overrides || {},
     mcpServers: config.mcpServers || {},
     workspaces,
     skipInstall: config.skipInstall || false,
@@ -234,8 +230,6 @@ export function validateConfig(
       }
     }
   }
-
-  // Validate override rule names will be checked after rule resolution
 }
 
 export async function loadRulesFromDirectory(
@@ -568,51 +562,6 @@ export async function loadAllRules(
   };
 }
 
-export function applyOverrides<T extends ManagedFile>(
-  files: T[],
-  overrides: Record<string, string | false>,
-  cwd: string,
-): T[] {
-  // Validate that all override names exist in the resolved files
-  for (const name of Object.keys(overrides)) {
-    if (!files.some((file) => file.name === name)) {
-      throw new Error(
-        `Override entry "${name}" does not exist in resolved files`,
-      );
-    }
-  }
-
-  const fileMap = new Map<string, T>();
-
-  for (const file of files) {
-    fileMap.set(file.name, file);
-  }
-
-  for (const [name, override] of Object.entries(overrides)) {
-    if (override === false) {
-      fileMap.delete(name);
-    } else if (typeof override === "string") {
-      const overridePath = path.resolve(cwd, override);
-      if (!fs.existsSync(overridePath)) {
-        throw new Error(`Override file not found: ${override} in ${cwd}`);
-      }
-
-      const content = fs.readFileSync(overridePath, "utf8");
-      const existing = fileMap.get(name);
-      fileMap.set(name, {
-        ...(existing ?? {}),
-        name,
-        content,
-        sourcePath: overridePath,
-        source: "local",
-        presetName: undefined,
-      } as T);
-    }
-  }
-
-  return Array.from(fileMap.values());
-}
-
 /**
  * Merge preset MCP servers with local config MCP servers
  * Local config takes precedence over preset config
@@ -632,7 +581,7 @@ function mergePresetMcpServers(
       delete newMcpServers[serverName];
       continue;
     }
-    // Only add if not already defined in config (override handled by config)
+    // Only add if not already defined in config (local config takes precedence)
     if (!Object.prototype.hasOwnProperty.call(newMcpServers, serverName)) {
       newMcpServers[serverName] = serverConfig;
     }
@@ -681,48 +630,10 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
   const { rules, commands, assets, mcpServers, hooks, hookFiles } =
     await loadAllRules(configWithDefaults, workingDir);
 
-  let rulesWithOverrides = rules;
-  let commandsWithOverrides = commands;
-  // Note: Assets are not currently supported in overrides as they are binary/varied files
-  // Note: Hooks are not currently supported in overrides
-
-  if (configWithDefaults.overrides) {
-    const overrides = configWithDefaults.overrides;
-    const ruleNames = new Set(rules.map((rule) => rule.name));
-    const commandNames = new Set(commands.map((command) => command.name));
-
-    for (const overrideName of Object.keys(overrides)) {
-      if (!ruleNames.has(overrideName) && !commandNames.has(overrideName)) {
-        throw new Error(
-          `Override entry "${overrideName}" does not exist in resolved rules or commands`,
-        );
-      }
-    }
-
-    const ruleOverrides = Object.fromEntries(
-      Object.entries(overrides).filter(([name]) => ruleNames.has(name)),
-    );
-    const commandOverrides = Object.fromEntries(
-      Object.entries(overrides).filter(([name]) => commandNames.has(name)),
-    );
-
-    if (Object.keys(ruleOverrides).length > 0) {
-      rulesWithOverrides = applyOverrides(rules, ruleOverrides, workingDir);
-    }
-
-    if (Object.keys(commandOverrides).length > 0) {
-      commandsWithOverrides = applyOverrides(
-        commands,
-        commandOverrides,
-        workingDir,
-      );
-    }
-  }
-
   return {
     config: configWithDefaults,
-    rules: rulesWithOverrides,
-    commands: commandsWithOverrides,
+    rules,
+    commands,
     assets,
     mcpServers,
     hooks,
