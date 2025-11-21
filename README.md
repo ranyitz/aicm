@@ -422,7 +422,7 @@ When you have a preset package within your workspace (a package that provides ru
 ```json
 {
   "skipInstall": true,
-  "rulesDir": "./rules",
+  "rootDir": "./",
   "targets": ["cursor"]
 }
 ```
@@ -561,7 +561,7 @@ install().then((result) => {
 // Install with custom options
 const customConfig = {
   targets: ["cursor"],
-  rulesDir: "rules",
+  rootDir: "./",
   presets: ["@team/ai-preset"],
 };
 

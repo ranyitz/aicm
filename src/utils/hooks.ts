@@ -182,7 +182,6 @@ export async function loadHooksFromDirectory(
     hooksConfig,
     hookFiles,
     rootDir,
-    hooksDir,
   );
 
   return { config: rewrittenConfig, files: hookFiles };

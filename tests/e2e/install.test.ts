@@ -83,7 +83,7 @@ test("handle missing rule files", async () => {
   ).toBe(true);
 });
 
-test("multiple rules from rulesDir", async () => {
+test("multiple rules from rootDir", async () => {
   await setupFromFixture("multiple-rules");
 
   const { stdout, code } = await runCommand("install --ci");
@@ -367,7 +367,7 @@ test("do not install canceled mcp servers", async () => {
   expect(finalMcpConfig.mcpServers["canceled-server"]).toBeUndefined();
 });
 
-test("rulesDir with subdirectories", async () => {
+test("rootDir with subdirectories", async () => {
   await setupFromFixture("rule-subdirs");
 
   const { stdout, code } = await runCommand("install --ci");

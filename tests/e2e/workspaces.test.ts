@@ -551,10 +551,10 @@ test("allow empty root config in workspace mode", async () => {
     "Backend Development Rules (Empty Root Config)",
   );
 
-  // Verify that root config file exists but has no rulesDir or presets
+  // Verify that root config file exists but has no rootDir or presets
   expect(fileExists("aicm.json")).toBe(true);
   const rootConfig = JSON.parse(readTestFile("aicm.json"));
-  expect(rootConfig.rulesDir).toBeUndefined();
+  expect(rootConfig.rootDir).toBeUndefined();
   expect(rootConfig.presets).toBeUndefined();
   expect(rootConfig.workspaces).toBe(true);
 });

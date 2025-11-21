@@ -239,17 +239,17 @@ export function validateConfig(
 }
 
 export async function loadRulesFromDirectory(
-  rulesDir: string,
+  directoryPath: string,
   source: "local" | "preset",
   presetName?: string,
 ): Promise<RuleFile[]> {
   const rules: RuleFile[] = [];
 
-  if (!fs.existsSync(rulesDir)) {
+  if (!fs.existsSync(directoryPath)) {
     return rules;
   }
 
-  const pattern = path.join(rulesDir, "**/*.mdc").replace(/\\/g, "/");
+  const pattern = path.join(directoryPath, "**/*.mdc").replace(/\\/g, "/");
   const filePaths = await fg(pattern, {
     onlyFiles: true,
     absolute: true,
@@ -258,8 +258,8 @@ export async function loadRulesFromDirectory(
   for (const filePath of filePaths) {
     const content = await fs.readFile(filePath, "utf8");
 
-    // Preserve directory structure by using relative path from rulesDir
-    const relativePath = path.relative(rulesDir, filePath);
+    // Preserve directory structure by using relative path from source directory
+    const relativePath = path.relative(directoryPath, filePath);
     const ruleName = relativePath.replace(/\.mdc$/, "").replace(/\\/g, "/");
 
     rules.push({
@@ -275,17 +275,17 @@ export async function loadRulesFromDirectory(
 }
 
 export async function loadCommandsFromDirectory(
-  commandsDir: string,
+  directoryPath: string,
   source: "local" | "preset",
   presetName?: string,
 ): Promise<CommandFile[]> {
   const commands: CommandFile[] = [];
 
-  if (!fs.existsSync(commandsDir)) {
+  if (!fs.existsSync(directoryPath)) {
     return commands;
   }
 
-  const pattern = path.join(commandsDir, "**/*.md").replace(/\\/g, "/");
+  const pattern = path.join(directoryPath, "**/*.md").replace(/\\/g, "/");
   const filePaths = await fg(pattern, {
     onlyFiles: true,
     absolute: true,
@@ -295,7 +295,7 @@ export async function loadCommandsFromDirectory(
 
   for (const filePath of filePaths) {
     const content = await fs.readFile(filePath, "utf8");
-    const relativePath = path.relative(commandsDir, filePath);
+    const relativePath = path.relative(directoryPath, filePath);
     const commandName = relativePath.replace(/\.md$/, "").replace(/\\/g, "/");
 
     commands.push({
@@ -311,18 +311,18 @@ export async function loadCommandsFromDirectory(
 }
 
 export async function loadAssetsFromDirectory(
-  rulesDir: string,
+  directoryPath: string,
   source: "local" | "preset",
   presetName?: string,
 ): Promise<AssetFile[]> {
   const assets: AssetFile[] = [];
 
-  if (!fs.existsSync(rulesDir)) {
+  if (!fs.existsSync(directoryPath)) {
     return assets;
   }
 
   // Find all files except .mdc files and hidden files
-  const pattern = path.join(rulesDir, "**/*").replace(/\\/g, "/");
+  const pattern = path.join(directoryPath, "**/*").replace(/\\/g, "/");
   const filePaths = await fg(pattern, {
     onlyFiles: true,
     absolute: true,
@@ -331,8 +331,8 @@ export async function loadAssetsFromDirectory(
 
   for (const filePath of filePaths) {
     const content = await fs.readFile(filePath);
-    // Preserve directory structure by using relative path from rulesDir
-    const relativePath = path.relative(rulesDir, filePath);
+    // Preserve directory structure by using relative path from source directory
+    const relativePath = path.relative(directoryPath, filePath);
     // Keep extension for assets
     const assetName = relativePath.replace(/\\/g, "/");
 

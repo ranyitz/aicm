@@ -188,7 +188,7 @@ test("override a rule and mcpServer from a preset", async () => {
   });
 });
 
-test("install rules from preset only (no rulesDir)", async () => {
+test("install rules from preset only (no rootDir)", async () => {
   await setupFromFixture("presets-only");
 
   const { stdout, code } = await runCommand("install --ci");
