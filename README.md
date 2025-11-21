@@ -429,13 +429,41 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 
 ### Configuration Options
 
-- **rootDir**: Directory containing your aicm structure (defaults to `"./"`). Must contain one or more of: `rules/`, `commands/`, `assets/`, `hooks/`, or `hooks.json`.
+- **rootDir**: Directory containing your aicm structure. Must contain one or more of: `rules/`, `commands/`, `assets/`, `hooks/`, or `hooks.json`. If not specified, aicm will only install rules from presets and will not pick up any local directories.
 - **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`. Supported targets: `cursor`, `windsurf`, `codex`, `claude`.
 - **presets**: List of preset packages or paths to include.
 - **overrides**: Map of rule names to `false` (disable) or a replacement file path.
 - **mcpServers**: MCP server configurations.
 - **workspaces**: Set to `true` to enable workspace mode. If not specified, aicm will automatically detect workspaces from your `package.json`.
 - **skipInstall**: Set to `true` to skip rule installation for this package. Useful for preset packages that provide rules but shouldn't have rules installed into them.
+
+### Configuration Examples
+
+#### Preset-Only Configuration
+
+For projects that only consume presets and don't have their own rules, you can omit `rootDir`:
+
+```json
+{
+  "presets": ["@company/ai-preset"]
+}
+```
+
+This ensures that only rules from the preset are installed, and any local directories like `commands/` or `rules/` in your project (used for your application) won't be accidentally picked up by aicm.
+
+#### Mixed Local and Preset Configuration
+
+To combine your own rules with preset rules:
+
+```json
+{
+  "rootDir": "./ai-config",
+  "presets": ["@company/ai-preset"],
+  "targets": ["cursor", "windsurf"]
+}
+```
+
+This will load rules from both `./ai-config/rules/` and the preset, installing them to both Cursor and Windsurf.
 
 ### Directory Structure
 

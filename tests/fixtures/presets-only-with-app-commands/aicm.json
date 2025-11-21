@@ -1,0 +1,4 @@
+{
+  "targets": ["cursor"],
+  "presets": ["./preset.json"]
+}

@@ -20,7 +20,7 @@ export interface RawConfig {
 }
 
 export interface Config {
-  rootDir: string;
+  rootDir?: string;
   targets: string[];
   presets?: string[];
   overrides?: Record<string, string | false>;
@@ -137,7 +137,7 @@ export function resolveWorkspaces(
 
 export function applyDefaults(config: RawConfig, workspaces: boolean): Config {
   return {
-    rootDir: config.rootDir || "./",
+    rootDir: config.rootDir,
     targets: config.targets || ["cursor"],
     presets: config.presets || [],
     overrides: config.overrides || {},
@@ -459,40 +459,42 @@ export async function loadAllRules(
   const allHooksConfigs: HooksJson[] = [];
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
 
-  // Load local files from rootDir
-  const rootPath = path.resolve(cwd, config.rootDir);
+  // Load local files from rootDir only if specified
+  if (config.rootDir) {
+    const rootPath = path.resolve(cwd, config.rootDir);
 
-  // Load rules from rules/ subdirectory
-  const rulesPath = path.join(rootPath, "rules");
-  if (fs.existsSync(rulesPath)) {
-    const localRules = await loadRulesFromDirectory(rulesPath, "local");
-    allRules.push(...localRules);
-  }
+    // Load rules from rules/ subdirectory
+    const rulesPath = path.join(rootPath, "rules");
+    if (fs.existsSync(rulesPath)) {
+      const localRules = await loadRulesFromDirectory(rulesPath, "local");
+      allRules.push(...localRules);
+    }
 
-  // Load commands from commands/ subdirectory
-  const commandsPath = path.join(rootPath, "commands");
-  if (fs.existsSync(commandsPath)) {
-    const localCommands = await loadCommandsFromDirectory(
-      commandsPath,
-      "local",
-    );
-    allCommands.push(...localCommands);
-  }
+    // Load commands from commands/ subdirectory
+    const commandsPath = path.join(rootPath, "commands");
+    if (fs.existsSync(commandsPath)) {
+      const localCommands = await loadCommandsFromDirectory(
+        commandsPath,
+        "local",
+      );
+      allCommands.push(...localCommands);
+    }
 
-  // Load hooks from hooks.json file
-  const hooksFilePath = path.join(rootPath, "hooks.json");
-  if (fs.existsSync(hooksFilePath)) {
-    const { config: localHooksConfig, files: localHookFiles } =
-      await loadHooksFromFile(hooksFilePath, "local");
-    allHooksConfigs.push(localHooksConfig);
-    allHookFiles.push(...localHookFiles);
-  }
+    // Load hooks from hooks.json file
+    const hooksFilePath = path.join(rootPath, "hooks.json");
+    if (fs.existsSync(hooksFilePath)) {
+      const { config: localHooksConfig, files: localHookFiles } =
+        await loadHooksFromFile(hooksFilePath, "local");
+      allHooksConfigs.push(localHooksConfig);
+      allHookFiles.push(...localHookFiles);
+    }
 
-  // Load assets from assets/ subdirectory
-  const assetsPath = path.join(rootPath, "assets");
-  if (fs.existsSync(assetsPath)) {
-    const localAssets = await loadAssetsFromDirectory(assetsPath, "local");
-    allAssets.push(...localAssets);
+    // Load assets from assets/ subdirectory
+    const assetsPath = path.join(rootPath, "assets");
+    if (fs.existsSync(assetsPath)) {
+      const localAssets = await loadAssetsFromDirectory(assetsPath, "local");
+      allAssets.push(...localAssets);
+    }
   }
 
   // Load presets

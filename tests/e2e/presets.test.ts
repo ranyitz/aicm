@@ -210,3 +210,33 @@ test("install rules from preset only (no rulesDir)", async () => {
     "TypeScript Best Practices (Preset Only)",
   );
 });
+
+test("install rules from preset only without picking up user's app directories", async () => {
+  await setupFromFixture("presets-only-with-app-commands");
+
+  const { stdout, code } = await runCommand("install --ci");
+
+  expect(code).toBe(0);
+  expect(stdout).toContain("Successfully installed 1 rule");
+
+  // Check that rules from preset were installed
+  expect(
+    fileExists(
+      path.join(".cursor", "rules", "aicm", "preset.json", "typescript.mdc"),
+    ),
+  ).toBe(true);
+
+  const typescriptRuleContent = readTestFile(
+    path.join(".cursor", "rules", "aicm", "preset.json", "typescript.mdc"),
+  );
+  expect(typescriptRuleContent).toContain("TypeScript Best Practices (Preset)");
+
+  // Check that user's app commands directory was NOT picked up
+  // Since there's no rootDir, the commands/ directory should be ignored
+  expect(
+    fileExists(path.join(".cursor", "commands", "user-app-command.md")),
+  ).toBe(false);
+
+  // The command should not be installed anywhere in .cursor
+  expect(stdout).not.toContain("user-app-command");
+});
