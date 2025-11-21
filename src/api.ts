@@ -20,3 +20,4 @@ export type {
   CommandFile,
   MCPServers,
 } from "./utils/config";
+export type { HookFile, HooksJson, HookType, HookCommand } from "./utils/hooks";

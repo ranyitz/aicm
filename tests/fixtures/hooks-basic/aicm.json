@@ -1,0 +1,4 @@
+{
+  "hooksFile": "./hooks.json",
+  "targets": ["cursor"]
+}

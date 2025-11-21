@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "./scripts/nested/deep/hook.sh"
+      }
+    ]
+  }
+}

@@ -3,6 +3,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import {
   loadConfig,
+  extractNamespaceFromPresetPath,
   ResolvedConfig,
   RuleFile,
   CommandFile,
@@ -11,6 +12,12 @@ import {
   SupportedTarget,
   detectWorkspacesFromPackageJson,
 } from "../utils/config";
+import {
+  HookFile,
+  HooksJson,
+  countHooks,
+  writeHooksToCursor,
+} from "../utils/hooks";
 import { withWorkingDirectory } from "../utils/working-directory";
 import { isCIEnvironment } from "../utils/is-ci";
 import {
@@ -67,6 +74,10 @@ export interface InstallResult {
    * Number of assets installed
    */
   installedAssetCount: number;
+  /**
+   * Number of hooks installed
+   */
+  installedHookCount: number;
   /**
    * Number of packages installed
    */
@@ -164,19 +175,6 @@ function rewriteCommandRelativeLinks(
       ? `../../rules/aicm/${assetMap.get(resolved)}`
       : match;
   });
-}
-
-export function extractNamespaceFromPresetPath(presetPath: string): string[] {
-  // Special case: npm package names always use forward slashes, regardless of platform
-  if (presetPath.startsWith("@")) {
-    // For scoped packages like @scope/package/subdir, create nested directories
-    return presetPath.split("/");
-  }
-
-  const parts = presetPath.split(path.sep);
-  return parts.filter(
-    (part) => part.length > 0 && part !== "." && part !== "..",
-  );
 }
 
 /**
@@ -394,6 +392,30 @@ function writeMcpServersToTargets(
 }
 
 /**
+ * Write hooks to IDE targets
+ */
+function writeHooksToTargets(
+  hooksConfig: HooksJson,
+  hookFiles: HookFile[],
+  targets: SupportedTarget[],
+  cwd: string,
+): void {
+  const hasHooks =
+    hooksConfig.hooks && Object.keys(hooksConfig.hooks).length > 0;
+
+  if (!hasHooks && hookFiles.length === 0) {
+    return;
+  }
+
+  for (const target of targets) {
+    if (target === "cursor") {
+      writeHooksToCursor(hooksConfig, hookFiles, cwd);
+    }
+    // Other targets do not support hooks yet
+  }
+}
+
+/**
  * Write MCP servers configuration to a specific file
  */
 export function writeMcpServersToFile(
@@ -468,11 +490,13 @@ export async function installPackage(
         installedRuleCount: 0,
         installedCommandCount: 0,
         installedAssetCount: 0,
+        installedHookCount: 0,
         packagesCount: 0,
       };
     }
 
-    const { config, rules, commands, assets, mcpServers } = resolvedConfig;
+    const { config, rules, commands, assets, mcpServers, hooks, hookFiles } =
+      resolvedConfig;
 
     if (config.skipInstall === true) {
       return {
@@ -480,6 +504,7 @@ export async function installPackage(
         installedRuleCount: 0,
         installedCommandCount: 0,
         installedAssetCount: 0,
+        installedHookCount: 0,
         packagesCount: 0,
       };
     }
@@ -504,18 +529,29 @@ export async function installPackage(
             cwd,
           );
         }
+
+        if (hooks && (countHooks(hooks) > 0 || hookFiles.length > 0)) {
+          writeHooksToTargets(
+            hooks,
+            hookFiles,
+            config.targets as SupportedTarget[],
+            cwd,
+          );
+        }
       }
 
       const uniqueRuleCount = new Set(rules.map((rule) => rule.name)).size;
       const uniqueCommandCount = new Set(
         commandsToInstall.map((command) => command.name),
       ).size;
+      const uniqueHookCount = countHooks(hooks);
 
       return {
         success: true,
         installedRuleCount: uniqueRuleCount,
         installedCommandCount: uniqueCommandCount,
         installedAssetCount: assets.length,
+        installedHookCount: uniqueHookCount,
         packagesCount: 1,
       };
     } catch (error) {
@@ -525,6 +561,7 @@ export async function installPackage(
         installedRuleCount: 0,
         installedCommandCount: 0,
         installedAssetCount: 0,
+        installedHookCount: 0,
         packagesCount: 0,
       };
     }
@@ -549,6 +586,7 @@ export async function install(
       installedRuleCount: 0,
       installedCommandCount: 0,
       installedAssetCount: 0,
+      installedHookCount: 0,
       packagesCount: 0,
     };
   }
@@ -594,12 +632,15 @@ export async function installCommand(
   } else {
     const ruleCount = result.installedRuleCount;
     const commandCount = result.installedCommandCount;
+    const hookCount = result.installedHookCount;
     const ruleMessage =
       ruleCount > 0 ? `${ruleCount} rule${ruleCount === 1 ? "" : "s"}` : null;
     const commandMessage =
       commandCount > 0
         ? `${commandCount} command${commandCount === 1 ? "" : "s"}`
         : null;
+    const hookMessage =
+      hookCount > 0 ? `${hookCount} hook${hookCount === 1 ? "" : "s"}` : null;
     const countsParts: string[] = [];
     if (ruleMessage) {
       countsParts.push(ruleMessage);
@@ -607,8 +648,13 @@ export async function installCommand(
     if (commandMessage) {
       countsParts.push(commandMessage);
     }
+    if (hookMessage) {
+      countsParts.push(hookMessage);
+    }
     const countsMessage =
-      countsParts.length > 0 ? countsParts.join(" and ") : "0 rules";
+      countsParts.length > 0
+        ? countsParts.join(", ").replace(/, ([^,]*)$/, " and $1")
+        : "0 rules";
 
     if (dryRun) {
       if (result.packagesCount > 1) {
@@ -618,8 +664,8 @@ export async function installCommand(
       } else {
         console.log(`Dry run: validated ${countsMessage}`);
       }
-    } else if (ruleCount === 0 && commandCount === 0) {
-      console.log("No rules or commands installed");
+    } else if (ruleCount === 0 && commandCount === 0 && hookCount === 0) {
+      console.log("No rules, commands, or hooks installed");
     } else if (result.packagesCount > 1) {
       console.log(
         `Successfully installed ${countsMessage} across ${result.packagesCount} packages`,

@@ -16,6 +16,7 @@ A CLI tool for managing Agentic configurations across projects.
 - [Features](#features)
   - [Rules](#using-rules)
   - [Commands](#using-commands)
+  - [Hooks](#using-hooks)
   - [MCP Servers](#mcp-servers)
   - [Auxiliary Files](#referencing-auxiliary-files)
   - [Overrides](#overrides)
@@ -170,6 +171,97 @@ Add a commands directory to your project configuration:
 
 Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appear in Cursor under the `/` command menu.
 
+### Using Hooks
+
+aicm provides first-class support for [Cursor Agent Hooks](https://docs.cursor.com/advanced/hooks), allowing you to intercept and extend the agent's behavior. Hooks enable you to run custom scripts before/after shell execution, file edits, MCP calls, and more.
+
+#### Basic Setup
+
+1. Add a `hooksFile` to your `aicm.json`:
+
+```json
+{
+  "hooksFile": "./hooks.json",
+  "targets": ["cursor"]
+}
+```
+
+2. Create your `hooks.json` file with the hooks configuration:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [{ "command": "./scripts/audit.sh" }],
+    "afterFileEdit": [{ "command": "./scripts/format.js" }]
+  }
+}
+```
+
+3. Create your hook scripts in the referenced locations:
+
+```
+my-project/
+├── aicm.json
+├── hooks.json
+└── scripts/
+    ├── audit.sh
+    └── format.js
+```
+
+#### Installation Behavior
+
+When you run `aicm install`, the following happens:
+
+1. **File Collection**: Hook scripts referenced in your `hooks.json` are collected
+2. **Path Rewriting**: Relative paths are rewritten to point to `.cursor/hooks/aicm/` with the directory structure intact
+3. **File Installation**: Scripts are copied to `.cursor/hooks/aicm/` (for local hooks) or `.cursor/hooks/aicm/<preset-name>/` (for preset hooks) with their directory structure preserved
+4. **Config Merging**: Your hooks are merged into `.cursor/hooks.json`
+
+#### Preset Namespacing
+
+aicm uses directory-based namespacing to prevent collisions:
+
+```
+.cursor/hooks/aicm/
+├── preset-a/
+│   └── validate.sh    # From preset-a
+└── preset-b/
+    └── validate.sh    # From preset-b
+```
+
+#### Workspace Support
+
+In monorepo/workspace mode, hooks are:
+
+- Installed individually for each package (in `package-x/.cursor/hooks.json`)
+- Merged and installed at the root (in `.cursor/hooks.json`)
+- Deduplicated by full path (including preset namespace)
+
+**Example workspace structure:**
+
+```
+my-monorepo/
+├── aicm.json (workspaces: true)
+├── .cursor/hooks.json (merged from all packages)
+├── package-a/
+│   ├── aicm.json
+│   ├── hooks.json
+│   └── .cursor/hooks.json (package-specific)
+└── package-b/
+    ├── aicm.json
+    ├── hooks.json
+    └── .cursor/hooks.json (package-specific)
+```
+
+#### Content Collision Detection
+
+If the same hook file (by path) has different content across workspace packages, aicm will:
+
+1. Warn you about the collision with full source information
+2. Use the last occurrence (last-writer-wins)
+3. Continue installation
+
 ### MCP Servers
 
 You can configure MCP servers directly in your `aicm.json`, which is useful for sharing mcp configurations across your team or bundling them into presets.
@@ -310,6 +402,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 {
   "rulesDir": "./rules",
   "commandsDir": "./commands",
+  "hooksFile": "./hooks.json",
   "targets": ["cursor"],
   "presets": [],
   "overrides": {},
@@ -320,6 +413,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 
 - **rulesDir**: Directory containing all rule files.
 - **commandsDir**: Directory containing Cursor command files.
+- **hooksFile**: Path to the hooks configuration file (e.g., `./hooks.json`).
 - **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`.
 - **presets**: List of preset packages or paths to include.
 - **overrides**: Map of rule names to `false` (disable) or a replacement file path.

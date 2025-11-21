@@ -1,6 +1,6 @@
 ---
 description: General development standards
-globs: 
+globs:
 alwaysApply: true
 ---
 
@@ -10,9 +10,11 @@ alwaysApply: true
 - Development workflow: e2e tests → implementation → verification
 - Document all features in README.md
 - Never modify CHANGELOG.md
+- Never use dynamic imports unless absolutely necessary
+- Consider windows & linux compatibility when writing code, espeically file system path operations, use native node modules such as `path` & `path.posix` for cross-platform compatibility
 
 ## Code Formatting
 
- - Use Prettier for code formatting with the configuration in @.prettierrc
+- Use Prettier for code formatting with the configuration in @.prettierrc
 - Run `pnpm format` to format all files
 - All code should be formatted for minimal diff previews

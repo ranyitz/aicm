@@ -2,3 +2,5 @@ dist
 node_modules
 tmp-test
 pnpm-lock.yaml
+# Intentionally invalid test fixtures
+tests/fixtures/hooks-invalid-json/hooks.json
