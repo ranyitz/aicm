@@ -3,7 +3,7 @@ import path from "node:path";
 import { cosmiconfig, CosmiconfigResult } from "cosmiconfig";
 import fg from "fast-glob";
 import {
-  loadHooksFromFile,
+  loadHooksFromDirectory,
   mergeHooksConfigs,
   HooksJson,
   HookFile,
@@ -480,11 +480,11 @@ export async function loadAllRules(
       allCommands.push(...localCommands);
     }
 
-    // Load hooks from hooks.json file
+    // Load hooks from hooks.json (sibling to hooks/ directory)
     const hooksFilePath = path.join(rootPath, "hooks.json");
     if (fs.existsSync(hooksFilePath)) {
       const { config: localHooksConfig, files: localHookFiles } =
-        await loadHooksFromFile(hooksFilePath, "local");
+        await loadHooksFromDirectory(rootPath, "local");
       allHooksConfigs.push(localHooksConfig);
       allHookFiles.push(...localHookFiles);
     }
@@ -525,11 +525,11 @@ export async function loadAllRules(
         allCommands.push(...presetCommands);
       }
 
-      // Load preset hooks from hooks.json
+      // Load preset hooks from hooks.json (sibling to hooks/ directory)
       const presetHooksFile = path.join(presetRootDir, "hooks.json");
       if (fs.existsSync(presetHooksFile)) {
         const { config: presetHooksConfig, files: presetHookFiles } =
-          await loadHooksFromFile(presetHooksFile, "preset", presetPath);
+          await loadHooksFromDirectory(presetRootDir, "preset", presetPath);
         allHooksConfigs.push(presetHooksConfig);
         allHookFiles.push(...presetHookFiles);
       }

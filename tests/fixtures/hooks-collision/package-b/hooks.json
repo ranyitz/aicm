@@ -3,7 +3,7 @@
   "hooks": {
     "afterFileEdit": [
       {
-        "command": "./audit.sh"
+        "command": "./hooks/audit.sh"
       }
     ]
   }

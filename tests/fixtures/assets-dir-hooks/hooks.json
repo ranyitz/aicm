@@ -3,10 +3,10 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "./assets/hooks/validate.sh"
+        "command": "./hooks/validate.sh"
       },
       {
-        "command": "./assets/hooks/helper.js"
+        "command": "./hooks/helper.js"
       }
     ]
   }

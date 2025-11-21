@@ -35,16 +35,19 @@ export interface HookFile {
 
 /**
  * Validate that a command path points to a file within the hooks directory
+ * Commands should be relative paths starting with ./hooks/
  */
 function validateHookPath(
   commandPath: string,
+  rootDir: string,
   hooksDir: string,
 ): { valid: boolean; relativePath?: string } {
   if (!commandPath.startsWith("./") && !commandPath.startsWith("../")) {
     return { valid: false };
   }
 
-  const resolvedPath = path.resolve(hooksDir, commandPath);
+  // Resolve path relative to rootDir (where hooks.json is located)
+  const resolvedPath = path.resolve(rootDir, commandPath);
   const relativePath = path.relative(hooksDir, resolvedPath);
 
   // Check if the file is within hooks directory (not using .. to escape)
@@ -56,14 +59,46 @@ function validateHookPath(
 }
 
 /**
- * Load hooks configuration from a hooks.json file and collect all referenced files
- * All hook script files must be in the hooks directory (same directory as hooks.json)
+ * Load all files from the hooks directory
  */
-export async function loadHooksFromFile(
-  hooksFilePath: string,
+async function loadAllFilesFromDirectory(
+  dir: string,
+  baseDir: string = dir,
+): Promise<Array<{ relativePath: string; absolutePath: string }>> {
+  const files: Array<{ relativePath: string; absolutePath: string }> = [];
+
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      // Recursively load files from subdirectories
+      const subFiles = await loadAllFilesFromDirectory(fullPath, baseDir);
+      files.push(...subFiles);
+    } else if (entry.isFile() && entry.name !== "hooks.json") {
+      // Skip hooks.json, collect all other files
+      const relativePath = path.relative(baseDir, fullPath);
+      files.push({ relativePath, absolutePath: fullPath });
+    }
+  }
+
+  return files;
+}
+
+/**
+ * Load hooks configuration from a root directory
+ * The directory should contain hooks.json (sibling to hooks/ directory)
+ * All files in the hooks/ subdirectory are copied during installation
+ */
+export async function loadHooksFromDirectory(
+  rootDir: string,
   source: "local" | "preset",
   presetName?: string,
 ): Promise<{ config: HooksJson; files: HookFile[] }> {
+  const hooksFilePath = path.join(rootDir, "hooks.json");
+  const hooksDir = path.join(rootDir, "hooks");
+
   if (!fs.existsSync(hooksFilePath)) {
     return {
       config: { version: 1, hooks: {} },
@@ -74,71 +109,71 @@ export async function loadHooksFromFile(
   const content = await fs.readFile(hooksFilePath, "utf8");
   const hooksConfig: HooksJson = JSON.parse(content);
 
-  const hooksDir = path.dirname(hooksFilePath);
+  // Load all files from hooks/ subdirectory
   const hookFiles: HookFile[] = [];
-  const seenFiles = new Set<string>();
+  if (fs.existsSync(hooksDir)) {
+    const allFiles = await loadAllFilesFromDirectory(hooksDir);
 
-  // Collect all command paths from the hooks configuration
-  if (hooksConfig.hooks) {
-    for (const hookType of Object.keys(hooksConfig.hooks) as HookType[]) {
-      const hookCommands = hooksConfig.hooks[hookType];
+    // Create a map of all files for validation
+    const filePathMap = new Map<string, string>();
+    for (const file of allFiles) {
+      filePathMap.set(file.relativePath, file.absolutePath);
+    }
 
-      if (hookCommands && Array.isArray(hookCommands)) {
-        for (const hookCommand of hookCommands) {
-          const commandPath = hookCommand.command;
+    // Validate that all referenced commands point to files within hooks directory
+    if (hooksConfig.hooks) {
+      for (const hookType of Object.keys(hooksConfig.hooks) as HookType[]) {
+        const hookCommands = hooksConfig.hooks[hookType];
 
-          if (commandPath && typeof commandPath === "string") {
-            const validation = validateHookPath(commandPath, hooksDir);
+        if (hookCommands && Array.isArray(hookCommands)) {
+          for (const hookCommand of hookCommands) {
+            const commandPath = hookCommand.command;
 
-            if (!validation.valid || !validation.relativePath) {
-              console.warn(
-                `Warning: Hook command "${commandPath}" must point to a file within the hooks directory. Skipping.`,
+            if (commandPath && typeof commandPath === "string") {
+              const validation = validateHookPath(
+                commandPath,
+                rootDir,
+                hooksDir,
               );
-              continue;
-            }
 
-            const resolvedPath = path.resolve(hooksDir, commandPath);
-
-            if (
-              fs.existsSync(resolvedPath) &&
-              fs.statSync(resolvedPath).isFile() &&
-              !seenFiles.has(resolvedPath)
-            ) {
-              seenFiles.add(resolvedPath);
-              const fileContent = await fs.readFile(resolvedPath);
-              const basename = path.basename(resolvedPath);
-
-              // Use the relative path from hooks directory
-              const relativePath = validation.relativePath;
-
-              // Namespace preset files
-              let namespacedPath: string;
-              if (source === "preset" && presetName) {
-                const namespace = extractNamespaceFromPresetPath(presetName);
-                // Use posix paths for consistent cross-platform behavior
-                namespacedPath = path.posix.join(
-                  ...namespace,
-                  relativePath.split(path.sep).join(path.posix.sep),
+              if (!validation.valid || !validation.relativePath) {
+                console.warn(
+                  `Warning: Hook command "${commandPath}" in hooks.json must reference a file within the hooks/ directory. Skipping.`,
                 );
-              } else {
-                // For local files, use the relative path as-is
-                namespacedPath = relativePath
-                  .split(path.sep)
-                  .join(path.posix.sep);
               }
-
-              hookFiles.push({
-                name: namespacedPath,
-                basename,
-                content: fileContent,
-                sourcePath: resolvedPath,
-                source,
-                presetName,
-              });
             }
           }
         }
       }
+    }
+
+    // Copy all files from the hooks/ directory
+    for (const file of allFiles) {
+      const fileContent = await fs.readFile(file.absolutePath);
+      const basename = path.basename(file.absolutePath);
+
+      // Namespace preset files
+      let namespacedPath: string;
+      if (source === "preset" && presetName) {
+        const namespace = extractNamespaceFromPresetPath(presetName);
+        // Use posix paths for consistent cross-platform behavior
+        namespacedPath = path.posix.join(
+          ...namespace,
+          file.relativePath.split(path.sep).join(path.posix.sep),
+        );
+      } else {
+        // For local files, use the relative path as-is
+        namespacedPath = file.relativePath.split(path.sep).join(path.posix.sep);
+      }
+
+      hookFiles.push({
+        name: namespacedPath,
+        basename,
+        content: fileContent,
+        sourcePath: file.absolutePath,
+        source,
+        presetName,
+      });
     }
   }
 
@@ -146,6 +181,7 @@ export async function loadHooksFromFile(
   const rewrittenConfig = rewriteHooksConfigForNamespace(
     hooksConfig,
     hookFiles,
+    rootDir,
     hooksDir,
   );
 
@@ -158,7 +194,7 @@ export async function loadHooksFromFile(
 function rewriteHooksConfigForNamespace(
   hooksConfig: HooksJson,
   hookFiles: HookFile[],
-  hooksDir: string,
+  rootDir: string,
 ): HooksJson {
   // Create a map from sourcePath to the hookFile
   const sourcePathToFile = new Map<string, HookFile>();
@@ -183,7 +219,8 @@ function rewriteHooksConfigForNamespace(
               typeof commandPath === "string" &&
               (commandPath.startsWith("./") || commandPath.startsWith("../"))
             ) {
-              const resolvedPath = path.resolve(hooksDir, commandPath);
+              // Resolve path relative to rootDir (where hooks.json is)
+              const resolvedPath = path.resolve(rootDir, commandPath);
               const hookFile = sourcePathToFile.get(resolvedPath);
               if (hookFile) {
                 // Use the namespaced name
@@ -241,7 +278,7 @@ export function mergeHooksConfigs(configs: HooksJson[]): HooksJson {
 
 /**
  * Rewrite command paths to point to the managed hooks directory (hooks/aicm/)
- * At this point, paths are already namespaced filenames from loadHooksFromFile
+ * At this point, paths are already namespaced filenames from loadHooksFromDirectory
  */
 export function rewriteHooksConfigToManagedDir(
   hooksConfig: HooksJson,

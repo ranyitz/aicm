@@ -180,46 +180,43 @@ aicm provides first-class support for [Cursor Agent Hooks](https://docs.cursor.c
 
 #### Basic Setup
 
-1. Add a `hooksFile` to your `aicm.json`:
+Hooks follow a convention similar to Cursor's own structure:
 
-```json
-{
-  "hooksFile": "./hooks.json",
-  "targets": ["cursor"]
-}
-```
-
-2. Create your `hooks.json` file with the hooks configuration:
-
-```json
-{
-  "version": 1,
-  "hooks": {
-    "beforeShellExecution": [{ "command": "./scripts/audit.sh" }],
-    "afterFileEdit": [{ "command": "./scripts/format.js" }]
-  }
-}
-```
-
-3. Create your hook scripts in the referenced locations:
+1. Create a `hooks.json` file in your project root (or `rootDir`)
+2. Create a `hooks/` directory as a sibling to `hooks.json`
+3. Place all your hook scripts inside the `hooks/` directory
 
 ```
 my-project/
 ├── aicm.json
 ├── hooks.json
-└── scripts/
+└── hooks/
     ├── audit.sh
     └── format.js
 ```
+
+Your `hooks.json` file should reference scripts within the `hooks/` directory:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [{ "command": "./hooks/audit.sh" }],
+    "afterFileEdit": [{ "command": "./hooks/format.js" }]
+  }
+}
+```
+
+> **Important:** All hook scripts must be within the `hooks/` directory. References to files outside this directory will be warned about and skipped.
 
 #### Installation Behavior
 
 When you run `aicm install`, the following happens:
 
-1. **File Collection**: Hook scripts referenced in your `hooks.json` are collected
-2. **Path Rewriting**: Relative paths are rewritten to point to `.cursor/hooks/aicm/` with the directory structure intact
+1. **Directory Copy**: All files in the `hooks/` directory (except `hooks.json`) are copied
+2. **Path Rewriting**: Command paths in `hooks.json` are rewritten to point to `.cursor/hooks/aicm/`
 3. **File Installation**: Scripts are copied to `.cursor/hooks/aicm/` (for local hooks) or `.cursor/hooks/aicm/<preset-name>/` (for preset hooks) with their directory structure preserved
-4. **Config Merging**: Your hooks are merged into `.cursor/hooks.json`
+4. **Config Merging**: Your hooks configuration is merged into `.cursor/hooks.json`
 
 #### Preset Namespacing
 
@@ -250,10 +247,14 @@ my-monorepo/
 ├── package-a/
 │   ├── aicm.json
 │   ├── hooks.json
+│   ├── hooks/
+│   │   └── check.sh
 │   └── .cursor/hooks.json (package-specific)
 └── package-b/
     ├── aicm.json
     ├── hooks.json
+    ├── hooks/
+    │   └── validate.js
     └── .cursor/hooks.json (package-specific)
 ```
 

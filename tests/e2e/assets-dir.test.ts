@@ -68,33 +68,27 @@ describe("assetsDir functionality", () => {
     const { code } = await runCommand("install --ci");
     expect(code).toBe(0);
 
-    // Hook files referenced in hooks.json preserve directory structure
-    expect(fileExists(".cursor/hooks/aicm/assets/hooks/validate.sh")).toBe(
-      true,
-    );
-    expect(fileExists(".cursor/hooks/aicm/assets/hooks/helper.js")).toBe(true);
+    // Hook files are now stored in the hooks/ directory
+    expect(fileExists(".cursor/hooks/aicm/validate.sh")).toBe(true);
+    expect(fileExists(".cursor/hooks/aicm/helper.js")).toBe(true);
 
     // Verify hooks.json points to the correct location
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.hooks.beforeShellExecution).toHaveLength(2);
     expect(hooksJson.hooks.beforeShellExecution[0].command).toBe(
-      "./hooks/aicm/assets/hooks/validate.sh",
+      "./hooks/aicm/validate.sh",
     );
     expect(hooksJson.hooks.beforeShellExecution[1].command).toBe(
-      "./hooks/aicm/assets/hooks/helper.js",
+      "./hooks/aicm/helper.js",
     );
 
     // Verify hook script content is preserved
-    const validateContent = readTestFile(
-      ".cursor/hooks/aicm/assets/hooks/validate.sh",
-    );
+    const validateContent = readTestFile(".cursor/hooks/aicm/validate.sh");
     expect(validateContent).toContain("./helper.js");
     expect(validateContent).toContain("Validation complete");
 
     // Verify both hook files maintain their relative paths to each other
-    const helperContent = readTestFile(
-      ".cursor/hooks/aicm/assets/hooks/helper.js",
-    );
+    const helperContent = readTestFile(".cursor/hooks/aicm/helper.js");
     expect(helperContent).toContain("Helper executed");
   });
 

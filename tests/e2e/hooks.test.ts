@@ -20,26 +20,25 @@ describe("hooks installation", () => {
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.version).toBe(1);
     expect(hooksJson.hooks.beforeShellExecution).toEqual([
-      { command: "./hooks/aicm/scripts/audit.sh" },
+      { command: "./hooks/aicm/audit.sh" },
     ]);
     expect(hooksJson.hooks.afterFileEdit).toEqual([
-      { command: "./hooks/aicm/scripts/format.js" },
+      { command: "./hooks/aicm/format.js" },
     ]);
 
     // Check hook files were copied with directory structure
     const structure = getDirectoryStructure(".cursor/hooks");
     expect(structure).toEqual([
       ".cursor/hooks/aicm/",
-      ".cursor/hooks/aicm/scripts/",
-      ".cursor/hooks/aicm/scripts/audit.sh",
-      ".cursor/hooks/aicm/scripts/format.js",
+      ".cursor/hooks/aicm/audit.sh",
+      ".cursor/hooks/aicm/format.js",
     ]);
 
     // Verify content
-    expect(readTestFile(".cursor/hooks/aicm/scripts/audit.sh")).toContain(
+    expect(readTestFile(".cursor/hooks/aicm/audit.sh")).toContain(
       "Running audit...",
     );
-    expect(readTestFile(".cursor/hooks/aicm/scripts/format.js")).toContain(
+    expect(readTestFile(".cursor/hooks/aicm/format.js")).toContain(
       "Formatting file...",
     );
   });
@@ -176,10 +175,10 @@ describe("hooks installation", () => {
 
     // AICM hooks should also be present with full path
     expect(hooksJson.hooks.beforeShellExecution).toContainEqual({
-      command: "./hooks/aicm/scripts/audit.sh",
+      command: "./hooks/aicm/audit.sh",
     });
     expect(hooksJson.hooks.afterFileEdit).toContainEqual({
-      command: "./hooks/aicm/scripts/format.js",
+      command: "./hooks/aicm/format.js",
     });
 
     // Verify both user and aicm hooks coexist in beforeShellExecution
@@ -224,14 +223,12 @@ describe("hooks installation", () => {
     expect(stdout).toMatch(/Successfully installed.*1 hook/);
 
     // File should be copied with full directory structure preserved
-    expect(fileExists(".cursor/hooks/aicm/scripts/nested/deep/hook.sh")).toBe(
-      true,
-    );
+    expect(fileExists(".cursor/hooks/aicm/nested/deep/hook.sh")).toBe(true);
 
     // Path in hooks.json should be rewritten with full path
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.hooks.beforeShellExecution).toEqual([
-      { command: "./hooks/aicm/scripts/nested/deep/hook.sh" },
+      { command: "./hooks/aicm/nested/deep/hook.sh" },
     ]);
   });
 
@@ -244,8 +241,8 @@ describe("hooks installation", () => {
 
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.hooks.beforeShellExecution).toEqual([
-      { command: "./hooks/aicm/scripts/audit.sh" },
-      { command: "./hooks/aicm/scripts/format.js" },
+      { command: "./hooks/aicm/audit.sh" },
+      { command: "./hooks/aicm/format.js" },
     ]);
   });
 
@@ -312,20 +309,20 @@ describe("hooks installation", () => {
     expect(stdout).toContain("Successfully installed 2 hooks");
 
     // Both files should be installed in their respective directories
-    expect(fileExists(".cursor/hooks/aicm/scripts/foo/audit.sh")).toBe(true);
-    expect(fileExists(".cursor/hooks/aicm/scripts/bar/audit.sh")).toBe(true);
+    expect(fileExists(".cursor/hooks/aicm/foo/audit.sh")).toBe(true);
+    expect(fileExists(".cursor/hooks/aicm/bar/audit.sh")).toBe(true);
 
     // Verify they have different content
-    const fooContent = readTestFile(".cursor/hooks/aicm/scripts/foo/audit.sh");
-    const barContent = readTestFile(".cursor/hooks/aicm/scripts/bar/audit.sh");
+    const fooContent = readTestFile(".cursor/hooks/aicm/foo/audit.sh");
+    const barContent = readTestFile(".cursor/hooks/aicm/bar/audit.sh");
     expect(fooContent).toContain("foo directory");
     expect(barContent).toContain("bar directory");
 
     // Hooks.json should reference both with full paths
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.hooks.beforeShellExecution).toEqual([
-      { command: "./hooks/aicm/scripts/foo/audit.sh" },
-      { command: "./hooks/aicm/scripts/bar/audit.sh" },
+      { command: "./hooks/aicm/foo/audit.sh" },
+      { command: "./hooks/aicm/bar/audit.sh" },
     ]);
   });
 });

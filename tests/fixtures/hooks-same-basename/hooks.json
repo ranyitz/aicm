@@ -3,10 +3,10 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "./scripts/foo/audit.sh"
+        "command": "./hooks/foo/audit.sh"
       },
       {
-        "command": "./scripts/bar/audit.sh"
+        "command": "./hooks/bar/audit.sh"
       }
     ]
   }
