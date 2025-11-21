@@ -315,7 +315,7 @@ test("do not install canceled mcp servers", async () => {
   expect(finalMcpConfig.mcpServers["canceled-server"]).toBeUndefined();
 });
 
-test("rootDir with subdirectories", async () => {
+test("rules directory with subdirectories", async () => {
   await setupFromFixture("rule-subdirs");
 
   const { stdout, code } = await runCommand("install --ci");
