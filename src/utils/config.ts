@@ -607,6 +607,26 @@ export async function loadConfigFile(
   }
 }
 
+/**
+ * Check if workspaces mode is enabled without loading all rules/presets
+ * This is useful for commands that only need to know the workspace setting
+ */
+export async function checkWorkspacesEnabled(cwd?: string): Promise<boolean> {
+  const workingDir = cwd || process.cwd();
+
+  const configResult = await loadConfigFile(workingDir);
+
+  if (!configResult?.config) {
+    return detectWorkspacesFromPackageJson(workingDir);
+  }
+
+  return resolveWorkspaces(
+    configResult.config,
+    configResult.filepath,
+    workingDir,
+  );
+}
+
 export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
   const workingDir = cwd || process.cwd();
 
