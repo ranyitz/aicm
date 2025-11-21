@@ -340,27 +340,33 @@ export function writeHooksToCursor(
     }
   }
 
-  // Filter out aicm-managed hooks from existing config
-  const userHooks: HooksJson = { version: 1, hooks: {} };
-  if (existingConfig && existingConfig.hooks) {
-    for (const hookType of Object.keys(existingConfig.hooks)) {
-      const hookCommands =
-        existingConfig.hooks[hookType as keyof typeof existingConfig.hooks];
-      if (hookCommands && Array.isArray(hookCommands)) {
-        // Keep only user hooks (not pointing to hooks/aicm/)
-        const userCommands = hookCommands.filter(
-          (cmd) => !cmd.command || !cmd.command.includes("hooks/aicm/"),
-        );
-        if (userCommands.length > 0) {
-          if (!userHooks.hooks[hookType as keyof typeof userHooks.hooks]) {
-            userHooks.hooks[hookType as keyof typeof userHooks.hooks] = [];
-          }
-          userHooks.hooks[hookType as keyof typeof userHooks.hooks]!.push(
-            ...userCommands,
-          );
-        }
+  // Helper to safely iterate over hooks with proper typing
+  const forEachHook = <T extends HooksJson>(
+    config: T,
+    callback: (hookType: HookType, commands: HookCommand[]) => void,
+  ) => {
+    if (!config.hooks) return;
+    for (const hookType of Object.keys(config.hooks)) {
+      const typedHookType = hookType as HookType;
+      const commands = config.hooks[typedHookType];
+      if (commands && Array.isArray(commands)) {
+        callback(typedHookType, commands);
       }
     }
+  };
+
+  // Filter out aicm-managed hooks from existing config
+  const userHooks: HooksJson = { version: 1, hooks: {} };
+  if (existingConfig) {
+    forEachHook(existingConfig, (hookType, hookCommands) => {
+      // Keep only user hooks (not pointing to hooks/aicm/)
+      const userCommands = hookCommands.filter(
+        (cmd) => !cmd.command || !cmd.command.includes("hooks/aicm/"),
+      );
+      if (userCommands.length > 0) {
+        userHooks.hooks[hookType] = userCommands;
+      }
+    });
   }
 
   // Merge: user hooks first, then aicm hooks
@@ -370,31 +376,17 @@ export function writeHooksToCursor(
   };
 
   // First, deep copy user hooks
-  for (const hookType of Object.keys(userHooks.hooks)) {
-    const userCommands =
-      userHooks.hooks[hookType as keyof typeof userHooks.hooks];
-    if (userCommands && Array.isArray(userCommands)) {
-      mergedConfig.hooks[hookType as keyof typeof mergedConfig.hooks] = [
-        ...userCommands,
-      ];
-    }
-  }
+  forEachHook(userHooks, (hookType, userCommands) => {
+    mergedConfig.hooks[hookType] = [...userCommands];
+  });
 
   // Then add aicm hooks (concatenate with existing arrays)
-  if (finalConfig.hooks) {
-    for (const hookType of Object.keys(finalConfig.hooks)) {
-      const aicmCommands =
-        finalConfig.hooks[hookType as keyof typeof finalConfig.hooks];
-      if (aicmCommands && Array.isArray(aicmCommands)) {
-        if (!mergedConfig.hooks[hookType as keyof typeof mergedConfig.hooks]) {
-          mergedConfig.hooks[hookType as keyof typeof mergedConfig.hooks] = [];
-        }
-        mergedConfig.hooks[hookType as keyof typeof mergedConfig.hooks]!.push(
-          ...aicmCommands,
-        );
-      }
+  forEachHook(finalConfig, (hookType, aicmCommands) => {
+    if (!mergedConfig.hooks[hookType]) {
+      mergedConfig.hooks[hookType] = [];
     }
-  }
+    mergedConfig.hooks[hookType]!.push(...aicmCommands);
+  });
 
   // Write hooks.json
   fs.ensureDirSync(path.dirname(hooksJsonPath));
