@@ -82,8 +82,8 @@ export async function loadHooksFromFile(
                 let namespacedPath: string;
                 if (source === "preset" && presetName) {
                   const namespace = extractNamespaceFromPresetPath(presetName);
-                  // Use directory structure for namespacing: namespace/basename
-                  namespacedPath = path.join(...namespace, basename);
+                  // Use posix paths for JSON configs (always forward slashes)
+                  namespacedPath = path.posix.join(...namespace, basename);
                 } else {
                   namespacedPath = basename;
                 }
