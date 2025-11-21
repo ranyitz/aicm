@@ -148,11 +148,21 @@ The rules are now installed in `.cursor/rules/aicm/` and any MCP servers are con
 
 aicm uses Cursor's `.mdc` files for rules. Read more about the format [here](https://cursor.com/docs/context/rules).
 
-Add a rules directory to your project configuration:
+Create a `rules/` directory in your project (at the `rootDir` location):
+
+```
+my-project/
+├── aicm.json
+└── rules/
+    ├── typescript.mdc
+    └── react.mdc
+```
+
+Configure your `aicm.json`:
 
 ```json
 {
-  "rulesDir": "./rules",
+  "rootDir": "./",
   "targets": ["cursor"]
 }
 ```
@@ -163,11 +173,21 @@ Rules are installed in `.cursor/rules/aicm/` and are loaded automatically by Cur
 
 Cursor supports custom commands that can be invoked directly in the chat interface. aicm can manage these command files alongside your rules and MCP configurations.
 
-Add a commands directory to your project configuration:
+Create a `commands/` directory in your project (at the `rootDir` location):
+
+```
+my-project/
+├── aicm.json
+└── commands/
+    ├── review.md
+    └── generate.md
+```
+
+Configure your `aicm.json`:
 
 ```json
 {
-  "commandsDir": "./commands",
+  "rootDir": "./",
   "targets": ["cursor"]
 }
 ```
@@ -481,94 +501,6 @@ my-project/
 │   └── validate.sh
 └── hooks.json       # Hook configuration [optional]
 ```
-
-## Migration from v2.x to v3.0
-
-### Breaking Changes
-
-v3.0 introduces a convention-based directory structure for simplicity and predictability.
-
-#### Configuration Keys Changed
-
-**Before (v2.x):**
-
-```json
-{
-  "rulesDir": "./my-rules",
-  "commandsDir": "./my-commands",
-  "assetsDir": "./my-assets",
-  "hooksFile": "./my-hooks.json",
-  "targets": ["cursor"]
-}
-```
-
-**After (v3.0):**
-
-```json
-{
-  "rootDir": "./",
-  "targets": ["cursor"]
-}
-```
-
-#### Fixed Directory Structure
-
-Projects must now use the standard directory structure:
-
-- `rules/` for rule files
-- `commands/` for command files
-- `assets/` for auxiliary files
-- `hooks/` for hook scripts
-- `hooks.json` for hook configuration
-
-### Migration Steps
-
-1. **Create the standard structure:**
-
-```bash
-mkdir -p rules commands assets hooks
-```
-
-2. **Move your files:**
-
-```bash
-# Move rules (if needed)
-mv my-rules/* rules/
-
-# Move commands (if needed)
-mv my-commands/* commands/
-
-# Move assets (if needed)
-mv my-assets/* assets/
-
-# Move hooks (if needed)
-mv my-hooks.json hooks.json
-mv my-hooks/* hooks/
-```
-
-3. **Update `aicm.json`:**
-
-```json
-{
-  "rootDir": "./",
-  "targets": ["cursor"],
-  "presets": [],
-  "overrides": {}
-}
-```
-
-4. **Test the installation:**
-
-```bash
-npx aicm install
-```
-
-### Benefits
-
-- **Simpler configuration:** One config key (`rootDir`) instead of four
-- **Predictable paths:** Always know where files are located
-- **Easier to document:** Standard structure across all projects
-- **Better IDE support:** Convention-based structure is easier to understand
 
 ## CLI Commands
 
