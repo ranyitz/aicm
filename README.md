@@ -214,8 +214,8 @@ my-project/
 When you run `aicm install`, the following happens:
 
 1. **File Collection**: Hook scripts referenced in your `hooks.json` are collected
-2. **Path Rewriting**: Relative paths are rewritten to point to `.cursor/hooks/aicm/`
-3. **File Installation**: Scripts are copied to `.cursor/hooks/aicm/` or `.cursor/hooks/aicm/<preset-name>/` (for hooks coming from a preset)
+2. **Path Rewriting**: Relative paths are rewritten to point to `.cursor/hooks/aicm/` with the directory structure intact
+3. **File Installation**: Scripts are copied to `.cursor/hooks/aicm/` (for local hooks) or `.cursor/hooks/aicm/<preset-name>/` (for preset hooks) with their directory structure preserved
 4. **Config Merging**: Your hooks are merged into `.cursor/hooks.json`
 
 #### Preset Namespacing

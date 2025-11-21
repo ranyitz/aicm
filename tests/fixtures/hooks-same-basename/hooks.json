@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "./scripts/foo/audit.sh"
+      },
+      {
+        "command": "./scripts/bar/audit.sh"
+      }
+    ]
+  }
+}
+

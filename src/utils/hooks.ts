@@ -78,14 +78,24 @@ export async function loadHooksFromFile(
                 const fileContent = await fs.readFile(resolvedPath);
                 const basename = path.basename(resolvedPath);
 
+                // Calculate relative path from hooksDir to the hook file to preserve directory structure
+                const relativePath = path.relative(hooksDir, resolvedPath);
+
                 // Namespace preset files using the same logic as rules
                 let namespacedPath: string;
                 if (source === "preset" && presetName) {
                   const namespace = extractNamespaceFromPresetPath(presetName);
                   // Use posix paths for JSON configs (always forward slashes)
-                  namespacedPath = path.posix.join(...namespace, basename);
+                  // Preserve the directory structure from the preset
+                  namespacedPath = path.posix.join(
+                    ...namespace,
+                    relativePath.split(path.sep).join(path.posix.sep),
+                  );
                 } else {
-                  namespacedPath = basename;
+                  // For local files, preserve the relative path from hooks.json
+                  namespacedPath = relativePath
+                    .split(path.sep)
+                    .join(path.posix.sep);
                 }
 
                 hookFiles.push({
@@ -105,23 +115,28 @@ export async function loadHooksFromFile(
   }
 
   // Rewrite the config to use namespaced file names immediately
-  const rewrittenConfig = rewriteHooksConfigForFiles(hooksConfig, hookFiles);
+  const rewrittenConfig = rewriteHooksConfigForFiles(
+    hooksConfig,
+    hookFiles,
+    hooksDir,
+  );
 
   return { config: rewrittenConfig, files: hookFiles };
 }
 
 /**
  * Rewrite hooks config to use the namespaced names from the hook files
- * This must be done per-source to maintain correct basename-to-namespace mapping
+ * This must be done per-source to maintain correct source path to namespace mapping
  */
 function rewriteHooksConfigForFiles(
   hooksConfig: HooksJson,
   hookFiles: HookFile[],
+  hooksDir: string,
 ): HooksJson {
-  // Create a map from basename to the hookFile for this specific source
-  const basenameToFile = new Map<string, HookFile>();
+  // Create a map from sourcePath to the hookFile for this specific source
+  const sourcePathToFile = new Map<string, HookFile>();
   for (const hookFile of hookFiles) {
-    basenameToFile.set(hookFile.basename, hookFile);
+    sourcePathToFile.set(hookFile.sourcePath, hookFile);
   }
 
   const rewritten: HooksJson = {
@@ -140,8 +155,9 @@ function rewriteHooksConfigForFiles(
             typeof commandPath === "string" &&
             (commandPath.startsWith("./") || commandPath.startsWith("../"))
           ) {
-            const basename = path.basename(commandPath);
-            const hookFile = basenameToFile.get(basename);
+            // Resolve to absolute path to match with hookFile.sourcePath
+            const resolvedPath = path.resolve(hooksDir, commandPath);
+            const hookFile = sourcePathToFile.get(resolvedPath);
             if (hookFile) {
               // Use the namespaced name
               return { command: hookFile.name };

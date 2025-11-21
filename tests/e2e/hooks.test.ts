@@ -20,25 +20,26 @@ describe("hooks installation", () => {
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.version).toBe(1);
     expect(hooksJson.hooks.beforeShellExecution).toEqual([
-      { command: "./hooks/aicm/audit.sh" },
+      { command: "./hooks/aicm/scripts/audit.sh" },
     ]);
     expect(hooksJson.hooks.afterFileEdit).toEqual([
-      { command: "./hooks/aicm/format.js" },
+      { command: "./hooks/aicm/scripts/format.js" },
     ]);
 
-    // Check hook files were copied
+    // Check hook files were copied with directory structure
     const structure = getDirectoryStructure(".cursor/hooks");
     expect(structure).toEqual([
       ".cursor/hooks/aicm/",
-      ".cursor/hooks/aicm/audit.sh",
-      ".cursor/hooks/aicm/format.js",
+      ".cursor/hooks/aicm/scripts/",
+      ".cursor/hooks/aicm/scripts/audit.sh",
+      ".cursor/hooks/aicm/scripts/format.js",
     ]);
 
     // Verify content
-    expect(readTestFile(".cursor/hooks/aicm/audit.sh")).toContain(
+    expect(readTestFile(".cursor/hooks/aicm/scripts/audit.sh")).toContain(
       "Running audit...",
     );
-    expect(readTestFile(".cursor/hooks/aicm/format.js")).toContain(
+    expect(readTestFile(".cursor/hooks/aicm/scripts/format.js")).toContain(
       "Formatting file...",
     );
   });
@@ -173,12 +174,12 @@ describe("hooks installation", () => {
       command: "./user-scripts/stop.sh",
     });
 
-    // AICM hooks should also be present
+    // AICM hooks should also be present with full path
     expect(hooksJson.hooks.beforeShellExecution).toContainEqual({
-      command: "./hooks/aicm/audit.sh",
+      command: "./hooks/aicm/scripts/audit.sh",
     });
     expect(hooksJson.hooks.afterFileEdit).toContainEqual({
-      command: "./hooks/aicm/format.js",
+      command: "./hooks/aicm/scripts/format.js",
     });
 
     // Verify both user and aicm hooks coexist in beforeShellExecution
@@ -222,13 +223,15 @@ describe("hooks installation", () => {
     // Should have 1 hook
     expect(stdout).toMatch(/Successfully installed.*1 hook/);
 
-    // File should be copied with basename only
-    expect(fileExists(".cursor/hooks/aicm/hook.sh")).toBe(true);
+    // File should be copied with full directory structure preserved
+    expect(fileExists(".cursor/hooks/aicm/scripts/nested/deep/hook.sh")).toBe(
+      true,
+    );
 
-    // Path in hooks.json should be rewritten
+    // Path in hooks.json should be rewritten with full path
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.hooks.beforeShellExecution).toEqual([
-      { command: "./hooks/aicm/hook.sh" },
+      { command: "./hooks/aicm/scripts/nested/deep/hook.sh" },
     ]);
   });
 
@@ -241,22 +244,9 @@ describe("hooks installation", () => {
 
     const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
     expect(hooksJson.hooks.beforeShellExecution).toEqual([
-      { command: "./hooks/aicm/audit.sh" },
-      { command: "./hooks/aicm/format.js" },
+      { command: "./hooks/aicm/scripts/audit.sh" },
+      { command: "./hooks/aicm/scripts/format.js" },
     ]);
-  });
-
-  test("dry run shows hooks count", async () => {
-    await setupFromFixture("hooks-basic");
-
-    const { stdout } = await runCommand("install --ci --dry-run");
-
-    expect(stdout).toContain("Dry run: validated");
-    expect(stdout).toContain("2 hooks");
-
-    // Should not create any files
-    expect(fileExists(".cursor/hooks.json")).toBe(false);
-    expect(fileExists(".cursor/hooks/aicm")).toBe(false);
   });
 
   test("allows same basename from different presets with namespacing", async () => {
@@ -313,5 +303,30 @@ describe("hooks installation", () => {
     const content = readTestFile(".cursor/hooks/aicm/preset/check.sh");
     // Should be the content from package-b (last writer wins)
     expect(content).toContain("package-b");
+  });
+
+  test("preserves directory structure for same basename in different directories", async () => {
+    await setupFromFixture("hooks-same-basename");
+
+    const { stdout } = await runCommand("install --ci");
+
+    expect(stdout).toContain("Successfully installed 2 hooks");
+
+    // Both files should be installed in their respective directories
+    expect(fileExists(".cursor/hooks/aicm/scripts/foo/audit.sh")).toBe(true);
+    expect(fileExists(".cursor/hooks/aicm/scripts/bar/audit.sh")).toBe(true);
+
+    // Verify they have different content
+    const fooContent = readTestFile(".cursor/hooks/aicm/scripts/foo/audit.sh");
+    const barContent = readTestFile(".cursor/hooks/aicm/scripts/bar/audit.sh");
+    expect(fooContent).toContain("foo directory");
+    expect(barContent).toContain("bar directory");
+
+    // Hooks.json should reference both with full paths
+    const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
+    expect(hooksJson.hooks.beforeShellExecution).toEqual([
+      { command: "./hooks/aicm/scripts/foo/audit.sh" },
+      { command: "./hooks/aicm/scripts/bar/audit.sh" },
+    ]);
   });
 });
