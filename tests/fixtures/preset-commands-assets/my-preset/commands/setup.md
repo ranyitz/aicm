@@ -1,11 +1,11 @@
 # Setup Command
 
-This command uses configuration from the preset.
+This command uses assets from the preset.
 
-## Configuration
+## Schema
 
-The configuration file is located at [config.json](../rules/config.json).
+The schema file is located at [schema.json](../assets/schema.json).
 
-You can also reference it inline: `../rules/config.json`
+You can also reference it inline: `../assets/schema.json`
 
-Or in a sentence: Check the file at ../rules/config.json for more details.
+Or in a sentence: Check the file at ../assets/schema.json for more details.

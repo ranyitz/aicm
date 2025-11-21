@@ -212,3 +212,61 @@ test("install rules from preset only without picking up user's app directories",
   // The command should not be installed anywhere in .cursor
   expect(stdout).not.toContain("user-app-command");
 });
+
+test("preset commands and rules correctly reference assets with namespace paths", async () => {
+  await setupFromFixture("preset-commands-assets");
+
+  const { stdout, code } = await runCommand("install --ci");
+
+  expect(code).toBe(0);
+  expect(stdout).toContain("Successfully installed");
+
+  // Check that assets are installed with namespace
+  expect(
+    fileExists(
+      path.join(".cursor", "assets", "aicm", "my-preset", "schema.json"),
+    ),
+  ).toBe(true);
+
+  // Commands are NOT namespaced by preset (unlike rules)
+  expect(fileExists(path.join(".cursor", "commands", "aicm", "setup.md"))).toBe(
+    true,
+  );
+
+  // Check that rule is installed with namespace
+  expect(
+    fileExists(
+      path.join(".cursor", "rules", "aicm", "my-preset", "preset-rule.mdc"),
+    ),
+  ).toBe(true);
+
+  // Read the installed command and verify asset paths are correctly rewritten
+  const commandContent = readTestFile(
+    path.join(".cursor", "commands", "aicm", "setup.md"),
+  );
+
+  // The command is at .cursor/commands/aicm/setup.md
+  // The asset is at .cursor/assets/aicm/my-preset/schema.json
+  // Original path in preset: ../assets/schema.json
+  // After rewriting: ../../assets/aicm/my-preset/schema.json
+  expect(commandContent).toContain(
+    "[schema.json](../../assets/aicm/my-preset/schema.json)",
+  );
+  expect(commandContent).toContain("`../../assets/aicm/my-preset/schema.json`");
+  expect(commandContent).toContain(
+    "Check the file at ../../assets/aicm/my-preset/schema.json for more details",
+  );
+
+  // Read the installed rule and verify asset paths are correctly rewritten
+  const ruleContent = readTestFile(
+    path.join(".cursor", "rules", "aicm", "my-preset", "preset-rule.mdc"),
+  );
+
+  // The rule is at .cursor/rules/aicm/my-preset/preset-rule.mdc
+  // The asset is at .cursor/assets/aicm/my-preset/schema.json
+  // Original path in preset: ../assets/schema.json
+  // After rewriting: ../../../assets/aicm/my-preset/schema.json
+  expect(ruleContent).toContain(
+    "[schema.json](../../../assets/aicm/my-preset/schema.json)",
+  );
+});
