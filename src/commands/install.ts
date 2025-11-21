@@ -87,11 +87,34 @@ export interface InstallResult {
 /**
  * Rewrite asset references from source paths to installation paths
  * Only rewrites the ../assets/ pattern - everything else is preserved
+ *
+ * @param content - The file content to rewrite
+ * @param presetName - The preset name if this file is from a preset
+ * @param fileInstallDepth - The depth of the file's installation directory relative to .cursor/
+ *                           For example: .cursor/commands/aicm/file.md has depth 2 (commands, aicm)
+ *                                       .cursor/rules/aicm/preset/file.mdc has depth 3 (rules, aicm, preset)
  */
-function rewriteAssetReferences(content: string): string {
-  // Replace ../assets/ with ../../assets/aicm/
+function rewriteAssetReferences(
+  content: string,
+  presetName?: string,
+  fileInstallDepth: number = 2,
+): string {
+  // Calculate the relative path from the file to .cursor/assets/aicm/
+  // We need to go up fileInstallDepth levels to reach .cursor/, then down to assets/aicm/
+  const upLevels = "../".repeat(fileInstallDepth);
+
+  // If this is from a preset, include the preset namespace in the asset path
+  let assetBasePath = "assets/aicm/";
+  if (presetName) {
+    const namespace = extractNamespaceFromPresetPath(presetName);
+    assetBasePath = path.posix.join("assets", "aicm", ...namespace) + "/";
+  }
+
+  const targetPath = upLevels + assetBasePath;
+
+  // Replace ../assets/ with the calculated target path
   // Handles both forward slashes and backslashes for cross-platform compatibility
-  return content.replace(/\.\.[\\/]assets[\\/]/g, "../../assets/aicm/");
+  return content.replace(/\.\.[\\/]assets[\\/]/g, targetPath);
 }
 
 function getTargetPaths(): Record<string, string> {
@@ -125,8 +148,23 @@ function writeCursorRules(rules: RuleFile[], cursorRulesDir: string): void {
     const ruleFile = rulePath + ".mdc";
     fs.ensureDirSync(path.dirname(ruleFile));
 
+    // Calculate the depth for asset path rewriting
+    // cursorRulesDir is .cursor/rules/aicm (depth 2 from .cursor)
+    // Add namespace depth if present
+    let fileInstallDepth = 2; // rules, aicm
+    if (rule.presetName) {
+      const namespace = extractNamespaceFromPresetPath(rule.presetName);
+      fileInstallDepth += namespace.length;
+    }
+    // Add any subdirectories in the rule name
+    fileInstallDepth += ruleNameParts.length - 1; // -1 because the last part is the filename
+
     // Rewrite asset references before writing
-    const content = rewriteAssetReferences(rule.content);
+    const content = rewriteAssetReferences(
+      rule.content,
+      rule.presetName,
+      fileInstallDepth,
+    );
     fs.writeFileSync(ruleFile, content);
   }
 }
@@ -146,8 +184,19 @@ function writeCursorCommands(
     const commandFile = commandPath + ".md";
     fs.ensureDirSync(path.dirname(commandFile));
 
+    // Calculate the depth for asset path rewriting
+    // cursorCommandsDir is .cursor/commands/aicm (depth 2 from .cursor)
+    // Commands are NOT namespaced by preset, but we still need to account for subdirectories
+    let fileInstallDepth = 2; // commands, aicm
+    // Add any subdirectories in the command name
+    fileInstallDepth += commandNameParts.length - 1; // -1 because the last part is the filename
+
     // Rewrite asset references before writing
-    const content = rewriteAssetReferences(command.content);
+    const content = rewriteAssetReferences(
+      command.content,
+      command.presetName,
+      fileInstallDepth,
+    );
     fs.writeFileSync(commandFile, content);
   }
 }
@@ -178,8 +227,12 @@ function writeRulesForFile(
       rulePath = path.join(ruleDir, ...ruleNameParts);
     }
 
-    // Rewrite asset references before writing
-    const content = rewriteAssetReferences(rule.content);
+    // For windsurf/codex/claude, assets are installed at the same namespace level as rules
+    // Example: .aicm/my-preset/rule.md and .aicm/my-preset/asset.json
+    // So we need to remove the 'assets/' part from the path
+    // ../assets/file.json -> ../file.json
+    // ../../assets/file.json -> ../../file.json
+    const content = rule.content.replace(/(\.\.[/\\])assets[/\\]/g, "$1");
 
     const physicalRulePath = rulePath + ".md";
     fs.ensureDirSync(path.dirname(physicalRulePath));
