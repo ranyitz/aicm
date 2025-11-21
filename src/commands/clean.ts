@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import fs from "fs-extra";
 import path from "node:path";
-import { loadConfig, detectWorkspacesFromPackageJson } from "../utils/config";
+import { checkWorkspacesEnabled } from "../utils/config";
 import { withWorkingDirectory } from "../utils/working-directory";
 import { removeRulesBlock } from "../utils/rules-file-writer";
 import { discoverPackagesWithAicm } from "../utils/workspace-discovery";
@@ -305,9 +305,7 @@ export async function clean(options: CleanOptions = {}): Promise<CleanResult> {
   const cwd = options.cwd || process.cwd();
   const verbose = options.verbose || false;
 
-  const shouldUseWorkspaces =
-    (await loadConfig(cwd))?.config.workspaces ||
-    detectWorkspacesFromPackageJson(cwd);
+  const shouldUseWorkspaces = await checkWorkspacesEnabled(cwd);
 
   if (shouldUseWorkspaces) {
     return cleanWorkspaces(cwd, verbose);
