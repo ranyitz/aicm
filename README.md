@@ -182,10 +182,6 @@ aicm provides first-class support for [Cursor Agent Hooks](https://docs.cursor.c
 
 Hooks follow a convention similar to Cursor's own structure:
 
-1. Create a `hooks.json` file in your project root (or `rootDir`)
-2. Create a `hooks/` directory as a sibling to `hooks.json`
-3. Place all your hook scripts inside the `hooks/` directory
-
 ```
 my-project/
 ├── aicm.json
