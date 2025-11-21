@@ -108,12 +108,84 @@ function cleanMcpServers(cwd: string, verbose: boolean): boolean {
   }
 }
 
+function cleanHooks(cwd: string, verbose: boolean): boolean {
+  const hooksJsonPath = path.join(cwd, ".cursor", "hooks.json");
+  const hooksDir = path.join(cwd, ".cursor", "hooks", "aicm");
+
+  let hasChanges = false;
+
+  // Clean hooks directory
+  if (fs.existsSync(hooksDir)) {
+    fs.removeSync(hooksDir);
+    if (verbose) console.log(chalk.gray(`  Removed ${hooksDir}`));
+    hasChanges = true;
+  }
+
+  // Clean hooks.json
+  if (fs.existsSync(hooksJsonPath)) {
+    try {
+      const content: {
+        version?: number;
+        hooks?: Record<string, Array<{ command?: string }>>;
+      } = fs.readJsonSync(hooksJsonPath);
+
+      // Filter out aicm-managed hooks (those pointing to hooks/aicm/)
+      const userConfig: typeof content = {
+        version: content.version || 1,
+        hooks: {},
+      };
+      let removedAny = false;
+
+      if (content.hooks) {
+        for (const [hookType, hookCommands] of Object.entries(content.hooks)) {
+          if (Array.isArray(hookCommands)) {
+            const userCommands = hookCommands.filter(
+              (cmd) => !cmd.command || !cmd.command.includes("hooks/aicm/"),
+            );
+
+            if (userCommands.length < hookCommands.length) {
+              removedAny = true;
+            }
+
+            if (userCommands.length > 0) {
+              userConfig.hooks![hookType] = userCommands;
+            }
+          }
+        }
+      }
+
+      if (removedAny) {
+        const hasUserHooks =
+          userConfig.hooks && Object.keys(userConfig.hooks).length > 0;
+
+        if (!hasUserHooks) {
+          fs.removeSync(hooksJsonPath);
+          if (verbose)
+            console.log(chalk.gray(`  Removed empty ${hooksJsonPath}`));
+        } else {
+          fs.writeJsonSync(hooksJsonPath, userConfig, { spaces: 2 });
+          if (verbose)
+            console.log(
+              chalk.gray(`  Cleaned aicm hooks from ${hooksJsonPath}`),
+            );
+        }
+        hasChanges = true;
+      }
+    } catch {
+      console.warn(chalk.yellow(`Warning: Failed to clean hooks.json`));
+    }
+  }
+
+  return hasChanges;
+}
+
 function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
   let cleanedCount = 0;
 
   const dirsToCheck = [
     path.join(cwd, ".cursor", "rules"),
     path.join(cwd, ".cursor", "commands"),
+    path.join(cwd, ".cursor", "hooks"),
     path.join(cwd, ".cursor"),
   ];
 
@@ -169,6 +241,9 @@ export async function cleanPackage(
 
     // Clean MCP servers
     if (cleanMcpServers(cwd, verbose)) cleanedCount++;
+
+    // Clean hooks
+    if (cleanHooks(cwd, verbose)) cleanedCount++;
 
     // Clean empty directories
     cleanedCount += cleanEmptyDirectories(cwd, verbose);

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeMCPExecution": [
+      {
+        "command": "./validate.sh"
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "./track.js"
+      }
+    ]
+  }
+}
+

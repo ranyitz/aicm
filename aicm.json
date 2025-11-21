@@ -7,5 +7,6 @@
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"]
     }
-  }
+  },
+  "hooksFile": "./nonexistent.json"
 }

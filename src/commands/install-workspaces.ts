@@ -8,6 +8,13 @@ import {
   MCPServers,
   SupportedTarget,
 } from "../utils/config";
+import {
+  HookFile,
+  HooksJson,
+  mergeHooksConfigs,
+  dedupeHookFiles,
+  writeHooksToCursor,
+} from "../utils/hooks";
 import { withWorkingDirectory } from "../utils/working-directory";
 import { parseRuleFrontmatter } from "../utils/rules-file-writer";
 import { discoverPackagesWithAicm } from "../utils/workspace-discovery";
@@ -289,6 +296,34 @@ function mergeWorkspaceMcpServers(
 }
 
 /**
+ * Merge hooks from multiple workspace packages
+ */
+function mergeWorkspaceHooks(
+  packages: Array<{ relativePath: string; config: ResolvedConfig }>,
+): { merged: HooksJson; hookFiles: HookFile[] } {
+  const allHooksConfigs: HooksJson[] = [];
+  const allHookFiles: HookFile[] = [];
+
+  for (const pkg of packages) {
+    // Collect hooks configs
+    if (pkg.config.hooks) {
+      allHooksConfigs.push(pkg.config.hooks);
+    }
+
+    // Collect hook files
+    allHookFiles.push(...pkg.config.hookFiles);
+  }
+
+  // Merge hooks configs
+  const merged = mergeHooksConfigs(allHooksConfigs);
+
+  // Dedupe hook files by basename with MD5 checking
+  const dedupedHookFiles = dedupeHookFiles(allHookFiles);
+
+  return { merged, hookFiles: dedupedHookFiles };
+}
+
+/**
  * Install aicm configurations for all packages in a workspace
  */
 async function installWorkspacesPackages(
@@ -307,10 +342,12 @@ async function installWorkspacesPackages(
     installedRuleCount: number;
     installedCommandCount: number;
     installedAssetCount: number;
+    installedHookCount: number;
   }>;
   totalRuleCount: number;
   totalCommandCount: number;
   totalAssetCount: number;
+  totalHookCount: number;
 }> {
   const results: Array<{
     path: string;
@@ -319,10 +356,12 @@ async function installWorkspacesPackages(
     installedRuleCount: number;
     installedCommandCount: number;
     installedAssetCount: number;
+    installedHookCount: number;
   }> = [];
   let totalRuleCount = 0;
   let totalCommandCount = 0;
   let totalAssetCount = 0;
+  let totalHookCount = 0;
 
   // Install packages sequentially for now (can be parallelized later)
   for (const pkg of packages) {
@@ -338,6 +377,7 @@ async function installWorkspacesPackages(
       totalRuleCount += result.installedRuleCount;
       totalCommandCount += result.installedCommandCount;
       totalAssetCount += result.installedAssetCount;
+      totalHookCount += result.installedHookCount;
 
       results.push({
         path: pkg.relativePath,
@@ -346,6 +386,7 @@ async function installWorkspacesPackages(
         installedRuleCount: result.installedRuleCount,
         installedCommandCount: result.installedCommandCount,
         installedAssetCount: result.installedAssetCount,
+        installedHookCount: result.installedHookCount,
       });
     } catch (error) {
       results.push({
@@ -355,6 +396,7 @@ async function installWorkspacesPackages(
         installedRuleCount: 0,
         installedCommandCount: 0,
         installedAssetCount: 0,
+        installedHookCount: 0,
       });
     }
   }
@@ -367,6 +409,7 @@ async function installWorkspacesPackages(
     totalRuleCount,
     totalCommandCount,
     totalAssetCount,
+    totalHookCount,
   };
 }
 
@@ -409,6 +452,7 @@ export async function installWorkspaces(
         installedRuleCount: 0,
         installedCommandCount: 0,
         installedAssetCount: 0,
+        installedHookCount: 0,
         packagesCount: 0,
       };
     }
@@ -498,6 +542,16 @@ export async function installWorkspaces(
       );
     }
 
+    // Merge and write hooks for workspace
+    const { merged: rootHooks, hookFiles: rootHookFiles } =
+      mergeWorkspaceHooks(packages);
+
+    const hasHooks = rootHooks.hooks && Object.keys(rootHooks.hooks).length > 0;
+
+    if (!dryRun && hasCursorTarget && (hasHooks || rootHookFiles.length > 0)) {
+      writeHooksToCursor(rootHooks, rootHookFiles, cwd);
+    }
+
     if (verbose) {
       result.packages.forEach((pkg) => {
         if (pkg.success) {
@@ -507,6 +561,14 @@ export async function installWorkspaces(
             summaryParts.push(
               `${pkg.installedCommandCount} command${
                 pkg.installedCommandCount === 1 ? "" : "s"
+              }`,
+            );
+          }
+
+          if (pkg.installedHookCount > 0) {
+            summaryParts.push(
+              `${pkg.installedHookCount} hook${
+                pkg.installedHookCount === 1 ? "" : "s"
               }`,
             );
           }
@@ -531,6 +593,12 @@ export async function installWorkspaces(
                 result.totalCommandCount === 1 ? "" : "s"
               } total`
             : "";
+        const hookSummary =
+          result.totalHookCount > 0
+            ? `, ${result.totalHookCount} hook${
+                result.totalHookCount === 1 ? "" : "s"
+              } total`
+            : "";
 
         console.log(
           chalk.green(
@@ -538,7 +606,7 @@ export async function installWorkspaces(
               result.packages.length - failedPackages.length
             }/${result.packages.length} packages (${result.totalRuleCount} rule${
               result.totalRuleCount === 1 ? "" : "s"
-            } total${commandSummary})`,
+            } total${commandSummary}${hookSummary})`,
           ),
         );
         console.log(
@@ -560,6 +628,7 @@ export async function installWorkspaces(
         installedRuleCount: result.totalRuleCount,
         installedCommandCount: result.totalCommandCount,
         installedAssetCount: result.totalAssetCount,
+        installedHookCount: result.totalHookCount,
         packagesCount: result.packages.length,
       };
     }
@@ -569,6 +638,7 @@ export async function installWorkspaces(
       installedRuleCount: result.totalRuleCount,
       installedCommandCount: result.totalCommandCount,
       installedAssetCount: result.totalAssetCount,
+      installedHookCount: result.totalHookCount,
       packagesCount: result.packages.length,
     };
   });

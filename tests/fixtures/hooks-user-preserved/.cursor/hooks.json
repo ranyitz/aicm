@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "./user-scripts/custom.sh"
+      }
+    ],
+    "stop": [
+      {
+        "command": "./user-scripts/stop.sh"
+      }
+    ]
+  }
+}
+

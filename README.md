@@ -13,9 +13,10 @@ A CLI tool for managing Agentic configurations across projects.
 - [Getting Started](#getting-started)
   - [Creating a Preset](#creating-a-preset)
   - [Using a Preset](#using-a-preset)
-- [Features](#features)
+  - [Features](#features)
   - [Rules](#using-rules)
   - [Commands](#using-commands)
+  - [Hooks](#using-hooks)
   - [MCP Servers](#mcp-servers)
   - [Auxiliary Files](#referencing-auxiliary-files)
   - [Overrides](#overrides)
@@ -170,6 +171,52 @@ Add a commands directory to your project configuration:
 
 Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appear in Cursor under the `/` command menu.
 
+### Using Hooks
+
+aicm supports configuring Cursor Agent Hooks using a simple configuration file. Hooks allow you to intercept and extend the agent's behavior.
+
+1. Add a hooks file to your configuration:
+
+```json
+{
+  "hooksFile": "./hooks.json",
+  "targets": ["cursor"]
+}
+```
+
+2. Create your `hooks.json` file:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "./hooks/audit.sh" },
+      { "command": "./hooks/block-git.sh" }
+    ],
+    "afterFileEdit": [{ "command": "./hooks/format.sh" }]
+  }
+}
+```
+
+3. Create your hook scripts in the referenced locations.
+
+It's recommeneded to use `hooks` directory to store your hook scripts and related files:
+
+```
+├── hooks/
+│   ├── audit.sh
+│   ├── format.sh
+│   └── block-git.sh
+```
+
+When installed, aicm will:
+
+- Copy your hook scripts to `.cursor/hooks/aicm/` (using basename deduplication)
+- Update `.cursor/hooks.json` to point to the installed scripts
+- Merge hooks from presets and workspaces automatically
+- Preserve any user-managed hooks in `.cursor/hooks.json`
+
 ### MCP Servers
 
 You can configure MCP servers directly in your `aicm.json`, which is useful for sharing mcp configurations across your team or bundling them into presets.
@@ -310,6 +357,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 {
   "rulesDir": "./rules",
   "commandsDir": "./commands",
+  "hooksFile": "./hooks.json",
   "targets": ["cursor"],
   "presets": [],
   "overrides": {},
@@ -320,6 +368,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 
 - **rulesDir**: Directory containing all rule files.
 - **commandsDir**: Directory containing Cursor command files.
+- **hooksFile**: Path to the hooks configuration file (e.g., `./hooks.json`).
 - **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`.
 - **presets**: List of preset packages or paths to include.
 - **overrides**: Map of rule names to `false` (disable) or a replacement file path.
