@@ -83,7 +83,7 @@ test("handle missing rule files", async () => {
   ).toBe(true);
 });
 
-test("multiple rules from rulesDir", async () => {
+test("multiple rules from rootDir", async () => {
   await setupFromFixture("multiple-rules");
 
   const { stdout, code } = await runCommand("install --ci");
@@ -230,58 +230,6 @@ test("preserve existing mcp configuration", async () => {
   });
 });
 
-test("override existing mcp servers with same key", async () => {
-  await setupFromFixture("mcp-override-same-key");
-
-  const mcpPath = path.join(".cursor", "mcp.json");
-
-  // Verify initial state
-  expect(fileExists(mcpPath)).toBe(true);
-  const existingMcpConfig = JSON.parse(readTestFile(mcpPath));
-  expect(existingMcpConfig.mcpServers["shared-server"]).toMatchObject({
-    command: "./old-scripts/old-server.sh",
-    args: ["--old"],
-    env: { OLD_TOKEN: "old123" },
-  });
-  expect(existingMcpConfig.mcpServers["user-only-server"]).toBeDefined();
-  expect(existingMcpConfig.userSettings).toMatchObject({
-    editor: "vim",
-    fontSize: 14,
-  });
-
-  const { code } = await runCommand("install --ci");
-  expect(code).toBe(0);
-
-  // Verify final state
-  const finalMcpConfig = JSON.parse(readTestFile(mcpPath));
-
-  // Shared server should be overridden
-  expect(finalMcpConfig.mcpServers["shared-server"]).toMatchObject({
-    command: "./scripts/aicm-updated-server.sh",
-    args: ["--aicm-updated"],
-    env: { AICM_TOKEN: "aicm-new-token" },
-    aicm: true,
-  });
-
-  // New AICM server should be added
-  expect(finalMcpConfig.mcpServers["aicm-only-server"]).toMatchObject({
-    command: "./scripts/aicm-only.sh",
-    env: { AICM_ONLY: "true" },
-    aicm: true,
-  });
-
-  // User server should be preserved
-  expect(finalMcpConfig.mcpServers["user-only-server"]).toMatchObject({
-    env: { USER_ONLY_TOKEN: "useronly456" },
-  });
-
-  // User settings should be preserved
-  expect(finalMcpConfig.userSettings).toMatchObject({
-    editor: "vim",
-    fontSize: 14,
-  });
-});
-
 test("clean up stale mcp servers", async () => {
   await setupFromFixture("mcp-stale-cleanup");
 
@@ -367,7 +315,7 @@ test("do not install canceled mcp servers", async () => {
   expect(finalMcpConfig.mcpServers["canceled-server"]).toBeUndefined();
 });
 
-test("rulesDir with subdirectories", async () => {
+test("rules directory with subdirectories", async () => {
   await setupFromFixture("rule-subdirs");
 
   const { stdout, code } = await runCommand("install --ci");
@@ -425,24 +373,6 @@ test("dry run does not write files", async () => {
 
   const mcpPath = path.join(".cursor", "mcp.json");
   expect(fileExists(mcpPath)).toBe(false);
-});
-
-test("override deleting last rule does not error", async () => {
-  await setupFromFixture("override-delete-rule");
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("No rules, commands, or hooks installed");
-
-  // Rule should not be installed
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "test-rule.mdc")),
-  ).toBe(false);
-
-  // MCP server should still be installed
-  const mcpPath = path.join(".cursor", "mcp.json");
-  expect(fileExists(mcpPath)).toBe(true);
 });
 
 test("skip installation when skipInstall is true", async () => {

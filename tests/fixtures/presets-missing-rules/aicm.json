@@ -1,5 +1,5 @@
 {
-  "rulesDir": "./rules",
+  "rootDir": "./",
   "targets": ["cursor"],
   "presets": ["./broken-preset.json"]
 }

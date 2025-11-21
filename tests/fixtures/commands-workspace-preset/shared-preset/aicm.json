@@ -1,4 +1,4 @@
 {
-  "commandsDir": "./commands",
+  "rootDir": "./",
   "skipInstall": true
 }

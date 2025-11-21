@@ -3,7 +3,7 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "./local-hook.sh"
+        "command": "./hooks/local-hook.sh"
       }
     ]
   }

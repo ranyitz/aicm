@@ -1,4 +1,4 @@
 {
-  "hooksFile": "./nonexistent.json",
+  "rootDir": "./",
   "targets": ["cursor"]
 }

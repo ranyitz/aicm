@@ -1,5 +1,5 @@
 {
   "skipInstall": true,
-  "rulesDir": "./rules",
+  "rootDir": "./",
   "targets": ["cursor"]
 }

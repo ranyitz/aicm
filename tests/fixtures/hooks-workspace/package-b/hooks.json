@@ -3,7 +3,7 @@
   "hooks": {
     "afterFileEdit": [
       {
-        "command": "./validate-b.js"
+        "command": "./hooks/validate-b.js"
       }
     ]
   }

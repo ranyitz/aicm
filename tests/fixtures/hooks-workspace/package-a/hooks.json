@@ -3,7 +3,7 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "./check-a.sh"
+        "command": "./hooks/check-a.sh"
       }
     ]
   }

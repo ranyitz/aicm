@@ -1,5 +1,4 @@
 {
-  "rulesDir": "rules",
-  "commandsDir": "commands",
+  "rootDir": "./",
   "targets": ["cursor"]
 }

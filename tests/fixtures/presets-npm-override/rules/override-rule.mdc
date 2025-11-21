@@ -1,9 +1,0 @@
----
-description:
-globs:
-alwaysApply: false
----
-# Override Rule
-name: Override Rule
-description: Rule that overrides preset
-alwaysApply: false

@@ -1,4 +1,4 @@
 {
-  "targets": ["cursor"],
-  "rulesDir": "./rules"
+  "rootDir": "./",
+  "targets": ["cursor"]
 }

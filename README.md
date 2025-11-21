@@ -14,12 +14,11 @@ A CLI tool for managing Agentic configurations across projects.
   - [Creating a Preset](#creating-a-preset)
   - [Using a Preset](#using-a-preset)
 - [Features](#features)
-  - [Rules](#using-rules)
-  - [Commands](#using-commands)
-  - [Hooks](#using-hooks)
+  - [Rules](#rules)
+  - [Commands](#commands)
+  - [Hooks](#hooks)
   - [MCP Servers](#mcp-servers)
-  - [Auxiliary Files](#referencing-auxiliary-files)
-  - [Overrides](#overrides)
+  - [Assets](#assets)
 - [Workspaces Support](#workspaces-support)
 - [Configuration](#configuration)
 - [CLI Commands](#cli-commands)
@@ -79,19 +78,22 @@ After installation, open Cursor and ask it to do something. Your AI assistant wi
 1. **Create an npm package** with the following structure:
 
 ```
-@team/ai-preset
+@team/ai-preset/
 ├── package.json
 ├── aicm.json
-└── rules/
-    ├── typescript.mdc
-    └── react.mdc
+├── rules/           # Rule files (.mdc)
+│   ├── typescript.mdc
+│   └── react.mdc
+├── commands/        # Command files (.md) [optional]
+├── assets/          # Auxiliary files [optional]
+└── hooks.json       # Hook configuration [optional]
 ```
 
 2. **Configure the preset's `aicm.json`**:
 
 ```json
 {
-  "rulesDir": "rules",
+  "rootDir": "./",
   "mcpServers": {
     "my-mcp": { "url": "https://example.com/sse" }
   }
@@ -136,87 +138,100 @@ The rules are now installed in `.cursor/rules/aicm/` and any MCP servers are con
 
 ### Notes
 
-- Generated rules are always placed in a subdirectory for deterministic cleanup and easy gitignore.
-- Users should add `.cursor/rules/aicm/` and `.aicm/` (for Windsurf/Codex) to `.gitignore` to avoid tracking generated rules.
+- Generated files are always placed in subdirectories for deterministic cleanup and easy gitignore.
+- Users should add `.cursor/*/aicm/` to `.gitignore` to avoid tracking generated files. This single pattern covers all aicm-managed directories (rules, commands, assets, hooks).
 
 ## Features
 
-### Using Rules
+### Rules
 
 aicm uses Cursor's `.mdc` files for rules. Read more about the format [here](https://cursor.com/docs/context/rules).
 
-Add a rules directory to your project configuration:
+Create a `rules/` directory in your project (at the `rootDir` location):
+
+```
+my-project/
+├── aicm.json
+└── rules/
+    ├── typescript.mdc
+    └── react.mdc
+```
+
+Configure your `aicm.json`:
 
 ```json
 {
-  "rulesDir": "./rules",
+  "rootDir": "./",
   "targets": ["cursor"]
 }
 ```
 
 Rules are installed in `.cursor/rules/aicm/` and are loaded automatically by Cursor.
 
-### Using Commands
+### Commands
 
 Cursor supports custom commands that can be invoked directly in the chat interface. aicm can manage these command files alongside your rules and MCP configurations.
 
-Add a commands directory to your project configuration:
+Create a `commands/` directory in your project (at the `rootDir` location):
+
+```
+my-project/
+├── aicm.json
+└── commands/
+    ├── review.md
+    └── generate.md
+```
+
+Configure your `aicm.json`:
 
 ```json
 {
-  "commandsDir": "./commands",
+  "rootDir": "./",
   "targets": ["cursor"]
 }
 ```
 
 Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appear in Cursor under the `/` command menu.
 
-### Using Hooks
+### Hooks
 
 aicm provides first-class support for [Cursor Agent Hooks](https://docs.cursor.com/advanced/hooks), allowing you to intercept and extend the agent's behavior. Hooks enable you to run custom scripts before/after shell execution, file edits, MCP calls, and more.
 
 #### Basic Setup
 
-1. Add a `hooksFile` to your `aicm.json`:
-
-```json
-{
-  "hooksFile": "./hooks.json",
-  "targets": ["cursor"]
-}
-```
-
-2. Create your `hooks.json` file with the hooks configuration:
-
-```json
-{
-  "version": 1,
-  "hooks": {
-    "beforeShellExecution": [{ "command": "./scripts/audit.sh" }],
-    "afterFileEdit": [{ "command": "./scripts/format.js" }]
-  }
-}
-```
-
-3. Create your hook scripts in the referenced locations:
+Hooks follow a convention similar to Cursor's own structure:
 
 ```
 my-project/
 ├── aicm.json
 ├── hooks.json
-└── scripts/
+└── hooks/
     ├── audit.sh
     └── format.js
 ```
+
+Your `hooks.json` file should reference scripts within the `hooks/` directory:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [{ "command": "./hooks/audit.sh" }],
+    "afterFileEdit": [{ "command": "./hooks/format.js" }]
+  }
+}
+```
+
+> **Important:** All hook scripts must be within the `hooks/` directory. References to files outside this directory will be warned about and skipped.
 
 #### Installation Behavior
 
 When you run `aicm install`, the following happens:
 
-1. **File Collection**: Hook scripts referenced in your `hooks.json` are collected
-2. **Path Rewriting**: Relative paths are rewritten to point to `.cursor/hooks/aicm/` with the directory structure intact
+1. **Directory Copy**: All files in the `hooks/` directory (except `hooks.json`) are copied
+2. **Path Rewriting**: Command paths in `hooks.json` are rewritten to point to `.cursor/hooks/aicm/`
 3. **File Installation**: Scripts are copied to `.cursor/hooks/aicm/` (for local hooks) or `.cursor/hooks/aicm/<preset-name>/` (for preset hooks) with their directory structure preserved
-4. **Config Merging**: Your hooks are merged into `.cursor/hooks.json`
+4. **Config Merging**: Your hooks configuration is merged into `.cursor/hooks.json`
 
 #### Preset Namespacing
 
@@ -247,10 +262,14 @@ my-monorepo/
 ├── package-a/
 │   ├── aicm.json
 │   ├── hooks.json
+│   ├── hooks/
+│   │   └── check.sh
 │   └── .cursor/hooks.json (package-specific)
 └── package-b/
     ├── aicm.json
     ├── hooks.json
+    ├── hooks/
+    │   └── validate.js
     └── .cursor/hooks.json (package-specific)
 ```
 
@@ -279,58 +298,58 @@ You can configure MCP servers directly in your `aicm.json`, which is useful for 
 
 When installed, these servers are automatically added to your `.cursor/mcp.json`.
 
-### Referencing Auxiliary Files
+### Assets
 
-You can place any file (e.g., `example.ts`, `schema.json`, `guide.md`) in your `rulesDir` alongside your `.mdc` files. These assets are automatically copied to the target location. You can reference them in your rules using relative paths, and aicm will automatically rewrite the links to point to the correct location for each target IDE.
+You can include assets (examples, schemas, scripts, etc.) that can be referenced by your rules, commands, and hooks by placing them in the `assets/` directory.
 
-Example `rules/my-rule.mdc`:
+All files in `assets/` are copied to `.cursor/assets/aicm/` (for Cursor) or `.aicm/` (for Windsurf/Codex/Claude).
 
-```markdown
-# My Rule
+**Example structure:**
 
-See [Example](./example.ts) for details.
+```
+my-project/
+├── aicm.json
+├── rules/
+│   └── api-guide.mdc        # References ../assets/schema.json
+├── commands/
+│   └── generate.md          # References ../assets/schema.json
+├── assets/
+│   ├── schema.json
+│   ├── examples/
+│   │   └── config.ts
+│   └── hooks/
+│       └── validate.sh
+└── hooks.json               # References ./hooks/validate.sh
 ```
 
-#### Commands Referencing Files
-
-You can also use this feature to create commands that reference auxiliary files in your `rulesDir`. Since assets in `rulesDir` are copied to the target directory, your commands can link to them.
-
-For example, if you have a schema file at `rules/schema.json` and a command at `commands/generate-schema.md`:
+**Referencing assets from rules and commands:**
 
 ```markdown
-# Generate Schema
+<!-- rules/api.mdc -->
 
-Use the schema defined in [Schema Template](../rules/schema.json) to generate the response.
+Use [this schema](../assets/schema.json) for validation.
+Check the example at `../assets/examples/response.json`.
 ```
 
-When installed, `aicm` will automatically rewrite the link to point to the correct location of `schema.json` in the target environment (e.g., `../../rules/aicm/schema.json` for Cursor).
+**Note:** The `../assets/` path is automatically adjusted during installation to `../../assets/aicm/` to match the final directory structure. You don't need to worry about the installation paths - just use `../assets/`.
 
-> **Note:** Path rewriting works for any relative path format in your commands - markdown links, inline code references, or bare paths - as long as they point to actual files in your `rulesDir`.
+**After installation:**
 
-#### usage in workspaces mode
-
-When using workspaces, commands installed at the monorepo root need to access auxiliary files located in nested packages (e.g., `packages/frontend/rules/helper.js`).
-
-`aicm` handles this automatically by:
-
-1. Copying referenced auxiliary files from nested packages to the root `.cursor/rules/aicm/` directory
-2. Rewriting paths in the root command to point to these copied files
-
-**Warning:** If your command references a `.mdc` file (Cursor rule), `aicm` will check if it's a "manual" rule or an "automatic" rule (one that is always applied or auto-attached via globs). If it's an automatic rule, `aicm` will warn you that copying it to the root might cause the rule to be included twice in the context (once from the nested package and once from the root copy). For best results, only reference manual `.mdc` files or other file types (like `.js`, `.json`, `.md`) from commands.
-
-### Overrides
-
-You can disable or replace specific rules or commands provided by presets using the `overrides` field:
-
-```json
-{
-  "presets": ["@company/ai-rules"],
-  "overrides": {
-    "rule-from-preset-a": "./rules/override-rule.mdc",
-    "rule-from-preset-b": false,
-    "legacy-command": false
-  }
-}
+```
+.cursor/
+├── assets/aicm/             # All assets copied here
+│   ├── schema.json
+│   ├── examples/
+│   │   └── config.ts
+│   └── hooks/
+│       └── validate.sh
+├── rules/aicm/
+│   └── api-guide.mdc        # References ../../assets/aicm/schema.json
+├── commands/aicm/
+│   └── generate.md          # References ../../assets/aicm/schema.json
+└── hooks/
+    ├── aicm/
+    └── hooks.json
 ```
 
 ## Workspaces Support
@@ -387,7 +406,7 @@ When you have a preset package within your workspace (a package that provides ru
 ```json
 {
   "skipInstall": true,
-  "rulesDir": "./rules",
+  "rootDir": "./",
   "targets": ["cursor"]
 }
 ```
@@ -400,26 +419,70 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 
 ```json
 {
-  "rulesDir": "./rules",
-  "commandsDir": "./commands",
-  "hooksFile": "./hooks.json",
+  "rootDir": "./",
   "targets": ["cursor"],
   "presets": [],
-  "overrides": {},
   "mcpServers": {},
   "skipInstall": false
 }
 ```
 
-- **rulesDir**: Directory containing all rule files.
-- **commandsDir**: Directory containing Cursor command files.
-- **hooksFile**: Path to the hooks configuration file (e.g., `./hooks.json`).
-- **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`.
+### Configuration Options
+
+- **rootDir**: Directory containing your aicm structure. Must contain one or more of: `rules/`, `commands/`, `assets/`, `hooks/`, or `hooks.json`. If not specified, aicm will only install rules from presets and will not pick up any local directories.
+- **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`. Supported targets: `cursor`, `windsurf`, `codex`, `claude`.
 - **presets**: List of preset packages or paths to include.
-- **overrides**: Map of rule names to `false` (disable) or a replacement file path.
 - **mcpServers**: MCP server configurations.
 - **workspaces**: Set to `true` to enable workspace mode. If not specified, aicm will automatically detect workspaces from your `package.json`.
 - **skipInstall**: Set to `true` to skip rule installation for this package. Useful for preset packages that provide rules but shouldn't have rules installed into them.
+
+### Configuration Examples
+
+#### Preset-Only Configuration
+
+For projects that only consume presets and don't have their own rules, you can omit `rootDir`:
+
+```json
+{
+  "presets": ["@company/ai-preset"]
+}
+```
+
+This ensures that only rules from the preset are installed, and any local directories like `commands/` or `rules/` in your project (used for your application) won't be accidentally picked up by aicm.
+
+#### Mixed Local and Preset Configuration
+
+To combine your own rules with preset rules:
+
+```json
+{
+  "rootDir": "./ai-config",
+  "presets": ["@company/ai-preset"],
+  "targets": ["cursor", "windsurf"]
+}
+```
+
+This will load rules from both `./ai-config/rules/` and the preset, installing them to both Cursor and Windsurf.
+
+### Directory Structure
+
+aicm uses a convention-based directory structure:
+
+```
+my-project/
+├── aicm.json
+├── rules/           # Rule files (.mdc) [required for rules]
+│   ├── api.mdc
+│   └── testing.mdc
+├── commands/        # Command files (.md) [optional]
+│   └── generate.md
+├── assets/          # Auxiliary files [optional]
+│   ├── schema.json
+│   └── examples/
+├── hooks/           # Hook scripts [optional]
+│   └── validate.sh
+└── hooks.json       # Hook configuration [optional]
+```
 
 ## CLI Commands
 
@@ -480,7 +543,7 @@ install().then((result) => {
 // Install with custom options
 const customConfig = {
   targets: ["cursor"],
-  rulesDir: "rules",
+  rootDir: "./",
   presets: ["@team/ai-preset"],
 };
 

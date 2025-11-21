@@ -1,121 +1,182 @@
-import path from "path";
 import {
   setupFromFixture,
   runCommand,
   fileExists,
   readTestFile,
+  getDirectoryStructure,
 } from "./helpers";
 
-describe("asset copying and referencing", () => {
-  test("should copy assets and rewrite links correctly for Cursor", async () => {
-    await setupFromFixture("assets-linking");
+describe("assetsDir functionality", () => {
+  test("installs assets to .cursor/assets/aicm/ for cursor target", async () => {
+    await setupFromFixture("assets-dir-basic");
 
-    // Run install targeting cursor
-    const { code } = await runCommand("install --ci");
+    const { code, stdout } = await runCommand("install --ci");
     expect(code).toBe(0);
+    expect(stdout).toContain("Successfully installed");
 
-    // Check assets are copied to .cursor/rules/aicm/
-    expect(
-      fileExists(path.join(".cursor", "rules", "aicm", "example.ts")),
-    ).toBe(true);
-    expect(
-      fileExists(
-        path.join(".cursor", "rules", "aicm", "subdir", "helper.json"),
-      ),
-    ).toBe(true);
+    // Verify assets are in .cursor/assets/aicm/
+    expect(fileExists(".cursor/assets/aicm/schema.json")).toBe(true);
+    expect(fileExists(".cursor/assets/aicm/examples/response.json")).toBe(true);
 
-    // Check links in Cursor rules
-    const myRuleContent = readTestFile(
-      path.join(".cursor", "rules", "aicm", "my-rule.mdc"),
+    // Verify asset contents
+    const schemaContent = readTestFile(".cursor/assets/aicm/schema.json");
+    expect(schemaContent).toContain('"type": "object"');
+
+    const exampleContent = readTestFile(
+      ".cursor/assets/aicm/examples/response.json",
     );
-    expect(myRuleContent).toContain("[Example](./example.ts)");
-
-    const nestedRuleContent = readTestFile(
-      path.join(".cursor", "rules", "aicm", "subdir", "nested-rule.mdc"),
-    );
-    expect(nestedRuleContent).toContain("[Helper](./helper.json)");
-    // This link should be relative to the rule file location
-    expect(nestedRuleContent).toContain("[Root Example](../example.ts)");
+    expect(exampleContent).toContain('"id": "123"');
   });
 
-  test("should copy assets and rewrite links correctly for Codex (AGENTS.md)", async () => {
-    await setupFromFixture("assets-linking");
+  test("rules preserve relative paths to assets", async () => {
+    await setupFromFixture("assets-dir-basic");
 
-    // Run install targeting codex
     const { code } = await runCommand("install --ci");
     expect(code).toBe(0);
 
-    // Check assets are copied to .aicm/
-    expect(fileExists(path.join(".aicm", "example.ts"))).toBe(true);
-    expect(fileExists(path.join(".aicm", "subdir", "helper.json"))).toBe(true);
+    // Read the installed rule
+    const ruleContent = readTestFile(".cursor/rules/aicm/api.mdc");
 
-    const nestedRuleContent = readTestFile(
-      path.join(".aicm", "subdir", "nested-rule.md"),
+    // Verify relative paths are rewritten to point to assets/aicm/
+    expect(ruleContent).toContain(
+      "[schema.json](../../assets/aicm/schema.json)",
     );
-    // This link should be relative to the rule file location (.aicm/subdir/)
-    expect(nestedRuleContent).toContain("[Root Example](../example.ts)");
+    expect(ruleContent).toContain("`../../assets/aicm/examples/response.json`");
   });
 
-  test("should copy assets and rewrite links correctly for Presets in Cursor", async () => {
-    await setupFromFixture("assets-preset");
+  test("commands preserve relative paths to assets", async () => {
+    await setupFromFixture("assets-dir-basic");
 
-    // Run install targeting cursor
     const { code } = await runCommand("install --ci");
     expect(code).toBe(0);
 
-    // Note: The preset name is "my-preset" (derived from folder name in aicm.json reference)
-    // Path will be: .cursor/rules/aicm/my-preset/preset-rule.mdc
-    const presetBaseDir = path.join(".cursor", "rules", "aicm", "my-preset");
+    // Read the installed command
+    const commandContent = readTestFile(".cursor/commands/aicm/generate.md");
 
-    // Check assets are copied
-    expect(fileExists(path.join(presetBaseDir, "preset-asset.txt"))).toBe(true);
-    expect(
-      fileExists(path.join(presetBaseDir, "subdir", "nested-asset.json")),
-    ).toBe(true);
-
-    // Check links in root preset rule
-    const presetRuleContent = readTestFile(
-      path.join(presetBaseDir, "preset-rule.mdc"),
-    );
-    expect(presetRuleContent).toContain("[Asset](./preset-asset.txt)");
-
-    // Check links in nested preset rule
-    const nestedPresetRuleContent = readTestFile(
-      path.join(presetBaseDir, "subdir", "nested-preset-rule.mdc"),
-    );
-    expect(nestedPresetRuleContent).toContain(
-      "[Nested Asset](./nested-asset.json)",
-    );
-    // Should be relative from my-preset/subdir to my-preset/preset-asset.txt
-    expect(nestedPresetRuleContent).toContain(
-      "[Root Asset](../preset-asset.txt)",
-    );
-  });
-
-  test("should rewrite links in commands to point to assets in rules directory", async () => {
-    await setupFromFixture("assets-commands");
-
-    // Run install targeting cursor
-    const { code } = await runCommand("install --ci");
-    expect(code).toBe(0);
-
-    // Check asset is copied to .cursor/rules/aicm/
-    expect(
-      fileExists(path.join(".cursor", "rules", "aicm", "schema.json")),
-    ).toBe(true);
-
-    // Check command is copied to .cursor/commands/aicm/
-    const commandPath = path.join(
-      ".cursor",
-      "commands",
-      "aicm",
-      "generate-schema.md",
-    );
-    expect(fileExists(commandPath)).toBe(true);
-
-    const commandContent = readTestFile(commandPath);
+    // Verify relative paths are rewritten to point to assets/aicm/
     expect(commandContent).toContain(
-      "[Schema Template](../../rules/aicm/schema.json)",
+      "[this schema](../../assets/aicm/schema.json)",
     );
+    expect(commandContent).toContain(
+      "Check the example at ../../assets/aicm/examples/response.json",
+    );
+  });
+
+  test("hook scripts can be stored in assetsDir", async () => {
+    await setupFromFixture("assets-dir-hooks");
+
+    const { code } = await runCommand("install --ci");
+    expect(code).toBe(0);
+
+    // Hook files are now stored in the hooks/ directory
+    expect(fileExists(".cursor/hooks/aicm/validate.sh")).toBe(true);
+    expect(fileExists(".cursor/hooks/aicm/helper.js")).toBe(true);
+
+    // Verify hooks.json points to the correct location
+    const hooksJson = JSON.parse(readTestFile(".cursor/hooks.json"));
+    expect(hooksJson.hooks.beforeShellExecution).toHaveLength(2);
+    expect(hooksJson.hooks.beforeShellExecution[0].command).toBe(
+      "./hooks/aicm/validate.sh",
+    );
+    expect(hooksJson.hooks.beforeShellExecution[1].command).toBe(
+      "./hooks/aicm/helper.js",
+    );
+
+    // Verify hook script content is preserved
+    const validateContent = readTestFile(".cursor/hooks/aicm/validate.sh");
+    expect(validateContent).toContain("./helper.js");
+    expect(validateContent).toContain("Validation complete");
+
+    // Verify both hook files maintain their relative paths to each other
+    const helperContent = readTestFile(".cursor/hooks/aicm/helper.js");
+    expect(helperContent).toContain("Helper executed");
+  });
+
+  test("assets installed to .aicm/ for windsurf/codex/claude targets", async () => {
+    await setupFromFixture("assets-dir-multitarget");
+
+    const { code } = await runCommand("install --ci");
+    expect(code).toBe(0);
+
+    // Verify assets are in .aicm/ for non-cursor targets
+    expect(fileExists(".aicm/config.yaml")).toBe(true);
+    expect(fileExists(".aicm/data.json")).toBe(true);
+
+    // Verify asset contents
+    const configContent = readTestFile(".aicm/config.yaml");
+    expect(configContent).toContain("version: 1.0");
+
+    const dataContent = readTestFile(".aicm/data.json");
+    expect(dataContent).toContain('"id": 1');
+  });
+
+  test("assets installed to both .cursor/assets/aicm/ and .aicm/ for multi-target", async () => {
+    await setupFromFixture("assets-dir-multitarget");
+
+    const { code } = await runCommand("install --ci");
+    expect(code).toBe(0);
+
+    // Verify assets exist in both locations
+    expect(fileExists(".cursor/assets/aicm/config.yaml")).toBe(true);
+    expect(fileExists(".cursor/assets/aicm/data.json")).toBe(true);
+    expect(fileExists(".aicm/config.yaml")).toBe(true);
+    expect(fileExists(".aicm/data.json")).toBe(true);
+
+    // Verify rule references are rewritten to point to .cursor/assets/aicm/
+    const ruleContent = readTestFile(".cursor/rules/aicm/example.mdc");
+    expect(ruleContent).toContain(
+      "[config file](../../assets/aicm/config.yaml)",
+    );
+    expect(ruleContent).toContain("`../../assets/aicm/data.json`");
+  });
+
+  test("windsurf target receives assets in .aicm/", async () => {
+    await setupFromFixture("assets-dir-multitarget");
+
+    const { code } = await runCommand("install --ci");
+    expect(code).toBe(0);
+
+    // Read windsurf rules file
+    const windsurfContent = readTestFile(".windsurfrules");
+
+    // Should reference .aicm/ directory
+    expect(windsurfContent).toContain("aicm/example.md");
+
+    // Verify assets are in .aicm/ (same directory as rules for windsurf)
+    expect(fileExists(".aicm/config.yaml")).toBe(true);
+    expect(fileExists(".aicm/data.json")).toBe(true);
+    expect(fileExists(".aicm/example.md")).toBe(true);
+  });
+
+  test("preserves directory structure in assets", async () => {
+    await setupFromFixture("assets-dir-basic");
+
+    const { code } = await runCommand("install --ci");
+    expect(code).toBe(0);
+
+    // Check directory structure is preserved
+    const structure = getDirectoryStructure(".cursor/assets/aicm");
+
+    expect(structure).toContain(".cursor/assets/aicm/examples/");
+    expect(structure).toContain(".cursor/assets/aicm/examples/response.json");
+    expect(structure).toContain(".cursor/assets/aicm/schema.json");
+
+    // Verify subdirectory structure maintained
+    expect(fileExists(".cursor/assets/aicm/examples/response.json")).toBe(true);
+  });
+
+  test("installs successfully without assetsDir", async () => {
+    // Use a fixture that doesn't have assetsDir
+    await setupFromFixture("commands-basic");
+
+    const { code, stdout } = await runCommand("install --ci");
+    expect(code).toBe(0);
+
+    // Should install commands successfully
+    expect(stdout).toContain("Successfully installed 2 commands");
+    expect(fileExists(".cursor/commands/aicm/test.md")).toBe(true);
+
+    // No assets directory should be created
+    expect(fileExists(".cursor/assets")).toBe(false);
   });
 });

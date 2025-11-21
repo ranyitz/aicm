@@ -3,7 +3,7 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "./scripts/nested/deep/hook.sh"
+        "command": "./hooks/nested/deep/hook.sh"
       }
     ]
   }

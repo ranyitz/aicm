@@ -160,35 +160,7 @@ test("handle errors with missing preset files", async () => {
   expect(stderr).toContain("Preset not found");
 });
 
-test("override a rule and mcpServer from a preset", async () => {
-  await setupFromFixture("presets-npm-override");
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 2 rules");
-
-  // Check that override rule was installed (not the original npm rule)
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "npm-rule.mdc")),
-  ).toBe(true);
-  const ruleContent = readTestFile(
-    path.join(".cursor", "rules", "aicm", "npm-rule.mdc"),
-  );
-  expect(ruleContent).toContain("Override Rule");
-
-  // Check that MCP server was overridden
-  const mcpPath = path.join(".cursor", "mcp.json");
-  expect(fileExists(mcpPath)).toBe(true);
-  const mcpConfig = JSON.parse(readTestFile(mcpPath));
-  expect(mcpConfig.mcpServers["preset-mcp"]).toMatchObject({
-    command: "./scripts/override-mcp.sh",
-    env: { MCP_TOKEN: "override" },
-    aicm: true,
-  });
-});
-
-test("install rules from preset only (no rulesDir)", async () => {
+test("install rules from preset only (no rootDir)", async () => {
   await setupFromFixture("presets-only");
 
   const { stdout, code } = await runCommand("install --ci");
@@ -211,31 +183,32 @@ test("install rules from preset only (no rulesDir)", async () => {
   );
 });
 
-test("rewrite command links to preset assets with correct namespace", async () => {
-  await setupFromFixture("preset-commands-assets");
+test("install rules from preset only without picking up user's app directories", async () => {
+  await setupFromFixture("presets-only-with-app-commands");
 
-  const { code } = await runCommand("install --ci");
+  const { stdout, code } = await runCommand("install --ci");
+
   expect(code).toBe(0);
+  expect(stdout).toContain("Successfully installed 1 rule");
 
-  const assetPath = path.join(
-    ".cursor",
-    "rules",
-    "aicm",
-    "my-preset",
-    "config.json",
+  // Check that rules from preset were installed
+  expect(
+    fileExists(
+      path.join(".cursor", "rules", "aicm", "preset.json", "typescript.mdc"),
+    ),
+  ).toBe(true);
+
+  const typescriptRuleContent = readTestFile(
+    path.join(".cursor", "rules", "aicm", "preset.json", "typescript.mdc"),
   );
-  expect(fileExists(assetPath)).toBe(true);
+  expect(typescriptRuleContent).toContain("TypeScript Best Practices (Preset)");
 
-  const commandPath = path.join(".cursor", "commands", "aicm", "setup.md");
-  expect(fileExists(commandPath)).toBe(true);
+  // Check that user's app commands directory was NOT picked up
+  // Since there's no rootDir, the commands/ directory should be ignored
+  expect(
+    fileExists(path.join(".cursor", "commands", "user-app-command.md")),
+  ).toBe(false);
 
-  const commandContent = readTestFile(commandPath);
-
-  expect(commandContent).toContain(
-    "[config.json](../../rules/aicm/my-preset/config.json)",
-  );
-  expect(commandContent).toContain("`../../rules/aicm/my-preset/config.json`");
-  expect(commandContent).toContain(
-    "Check the file at ../../rules/aicm/my-preset/config.json for more details",
-  );
+  // The command should not be installed anywhere in .cursor
+  expect(stdout).not.toContain("user-app-command");
 });

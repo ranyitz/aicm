@@ -84,11 +84,22 @@ export interface InstallResult {
   packagesCount: number;
 }
 
+/**
+ * Rewrite asset references from source paths to installation paths
+ * Only rewrites the ../assets/ pattern - everything else is preserved
+ */
+function rewriteAssetReferences(content: string): string {
+  // Replace ../assets/ with ../../assets/aicm/
+  // Handles both forward slashes and backslashes for cross-platform compatibility
+  return content.replace(/\.\.[\\/]assets[\\/]/g, "../../assets/aicm/");
+}
+
 function getTargetPaths(): Record<string, string> {
   const projectDir = process.cwd();
 
   return {
     cursor: path.join(projectDir, ".cursor", "rules", "aicm"),
+    assetsAicm: path.join(projectDir, ".cursor", "assets", "aicm"),
     aicm: path.join(projectDir, ".aicm"),
   };
 }
@@ -113,14 +124,16 @@ function writeCursorRules(rules: RuleFile[], cursorRulesDir: string): void {
 
     const ruleFile = rulePath + ".mdc";
     fs.ensureDirSync(path.dirname(ruleFile));
-    fs.writeFileSync(ruleFile, rule.content);
+
+    // Rewrite asset references before writing
+    const content = rewriteAssetReferences(rule.content);
+    fs.writeFileSync(ruleFile, content);
   }
 }
 
 function writeCursorCommands(
   commands: CommandFile[],
   cursorCommandsDir: string,
-  assets: AssetFile[],
 ): void {
   fs.removeSync(cursorCommandsDir);
 
@@ -133,48 +146,10 @@ function writeCursorCommands(
     const commandFile = commandPath + ".md";
     fs.ensureDirSync(path.dirname(commandFile));
 
-    // If the command file references assets in the rules directory, we need to rewrite the links.
-    // Commands are installed in .cursor/commands/aicm/
-    // Rules/assets are installed in .cursor/rules/aicm/
-    // So a link like "../rules/asset.json" in source (from commands/ to rules/)
-    // needs to become "../../rules/aicm/asset.json" in target (from .cursor/commands/aicm/ to .cursor/rules/aicm/)
-    const content = rewriteCommandRelativeLinks(
-      command.content,
-      command.sourcePath,
-      assets,
-    );
+    // Rewrite asset references before writing
+    const content = rewriteAssetReferences(command.content);
     fs.writeFileSync(commandFile, content);
   }
-}
-
-function rewriteCommandRelativeLinks(
-  content: string,
-  commandSourcePath: string,
-  assets: AssetFile[],
-): string {
-  const commandDir = path.dirname(commandSourcePath);
-
-  const assetMap = new Map(
-    assets.map((a) => {
-      let targetPath: string;
-      if (a.presetName) {
-        const namespace = extractNamespaceFromPresetPath(a.presetName);
-        // Use posix paths for URLs/links (always forward slashes)
-        targetPath = path.posix.join(...namespace, a.name);
-      } else {
-        // Normalize to posix for consistent forward slashes in links
-        targetPath = a.name.split(path.sep).join(path.posix.sep);
-      }
-      return [path.normalize(a.sourcePath), targetPath];
-    }),
-  );
-
-  return content.replace(/\.\.[/\\][\w\-/\\.]+/g, (match) => {
-    const resolved = path.normalize(path.resolve(commandDir, match));
-    return assetMap.has(resolved)
-      ? `../../rules/aicm/${assetMap.get(resolved)}`
-      : match;
-  });
 }
 
 /**
@@ -203,7 +178,8 @@ function writeRulesForFile(
       rulePath = path.join(ruleDir, ...ruleNameParts);
     }
 
-    const content = rule.content;
+    // Rewrite asset references before writing
+    const content = rewriteAssetReferences(rule.content);
 
     const physicalRulePath = rulePath + ".md";
     fs.ensureDirSync(path.dirname(physicalRulePath));
@@ -246,7 +222,7 @@ export function writeAssetsToTargets(
 
     switch (target) {
       case "cursor":
-        targetDir = targetPaths.cursor;
+        targetDir = targetPaths.assetsAicm;
         break;
       case "windsurf":
       case "codex":
@@ -313,7 +289,6 @@ function writeRulesToTargets(
 
 export function writeCommandsToTargets(
   commands: CommandFile[],
-  assets: AssetFile[],
   targets: SupportedTarget[],
 ): void {
   const projectDir = process.cwd();
@@ -323,7 +298,7 @@ export function writeCommandsToTargets(
     if (target === "cursor") {
       const commandsDir = path.join(cursorRoot, "commands", "aicm");
 
-      writeCursorCommands(commands, commandsDir, assets);
+      writeCursorCommands(commands, commandsDir);
     }
     // Other targets do not support commands yet
   }
@@ -518,7 +493,6 @@ export async function installPackage(
 
         writeCommandsToTargets(
           commandsToInstall,
-          assets,
           config.targets as SupportedTarget[],
         );
 

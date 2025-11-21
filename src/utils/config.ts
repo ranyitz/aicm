@@ -3,31 +3,25 @@ import path from "node:path";
 import { cosmiconfig, CosmiconfigResult } from "cosmiconfig";
 import fg from "fast-glob";
 import {
-  loadHooksFromFile,
+  loadHooksFromDirectory,
   mergeHooksConfigs,
   HooksJson,
   HookFile,
 } from "./hooks";
 
 export interface RawConfig {
-  rulesDir?: string;
-  commandsDir?: string;
-  hooksFile?: string;
+  rootDir?: string;
   targets?: string[];
   presets?: string[];
-  overrides?: Record<string, string | false>;
   mcpServers?: MCPServers;
   workspaces?: boolean;
   skipInstall?: boolean;
 }
 
 export interface Config {
-  rulesDir?: string;
-  commandsDir?: string;
-  hooksFile?: string;
+  rootDir?: string;
   targets: string[];
   presets?: string[];
-  overrides?: Record<string, string | false>;
   mcpServers?: MCPServers;
   workspaces?: boolean;
   skipInstall?: boolean;
@@ -87,12 +81,9 @@ export interface ResolvedConfig {
 }
 
 export const ALLOWED_CONFIG_KEYS = [
-  "rulesDir",
-  "commandsDir",
-  "hooksFile",
+  "rootDir",
   "targets",
   "presets",
-  "overrides",
   "mcpServers",
   "workspaces",
   "skipInstall",
@@ -143,12 +134,9 @@ export function resolveWorkspaces(
 
 export function applyDefaults(config: RawConfig, workspaces: boolean): Config {
   return {
-    rulesDir: config.rulesDir,
-    commandsDir: config.commandsDir,
-    hooksFile: config.hooksFile,
+    rootDir: config.rootDir,
     targets: config.targets || ["cursor"],
     presets: config.presets || [],
-    overrides: config.overrides || {},
     mcpServers: config.mcpServers || {},
     workspaces,
     skipInstall: config.skipInstall || false,
@@ -178,77 +166,47 @@ export function validateConfig(
     );
   }
 
-  // Validate that either rulesDir, commandsDir, hooksFile or presets is provided
-  const hasRulesDir =
-    "rulesDir" in config && typeof config.rulesDir === "string";
-  const hasCommandsDir =
-    "commandsDir" in config && typeof config.commandsDir === "string";
-  const hasHooksFile =
-    "hooksFile" in config && typeof config.hooksFile === "string";
+  // Validate rootDir
+  const hasRootDir = "rootDir" in config && typeof config.rootDir === "string";
   const hasPresets =
     "presets" in config &&
     Array.isArray(config.presets) &&
     config.presets.length > 0;
 
-  // In workspace mode, root config doesn't need rulesDir or presets
-  // since packages will have their own configurations
-  if (
-    !isWorkspaceMode &&
-    !hasRulesDir &&
-    !hasPresets &&
-    !hasCommandsDir &&
-    !hasHooksFile
-  ) {
-    throw new Error(
-      `At least one of rulesDir, commandsDir, hooksFile, or presets must be specified in config at ${configFilePath}`,
-    );
-  }
+  if (hasRootDir) {
+    const rootPath = path.resolve(cwd, config.rootDir as string);
 
-  // Validate rulesDir if provided
-  if (hasRulesDir) {
-    const rulesPath = path.resolve(cwd, config.rulesDir as string);
-
-    if (!fs.existsSync(rulesPath)) {
-      throw new Error(`Rules directory does not exist: ${rulesPath}`);
+    if (!fs.existsSync(rootPath)) {
+      throw new Error(`Root directory does not exist: ${rootPath}`);
     }
 
-    if (!fs.statSync(rulesPath).isDirectory()) {
-      throw new Error(`Rules path is not a directory: ${rulesPath}`);
-    }
-  }
-
-  if (hasCommandsDir) {
-    const commandsPath = path.resolve(cwd, config.commandsDir as string);
-
-    if (!fs.existsSync(commandsPath)) {
-      throw new Error(`Commands directory does not exist: ${commandsPath}`);
+    if (!fs.statSync(rootPath).isDirectory()) {
+      throw new Error(`Root path is not a directory: ${rootPath}`);
     }
 
-    if (!fs.statSync(commandsPath).isDirectory()) {
-      throw new Error(`Commands path is not a directory: ${commandsPath}`);
-    }
-  }
+    // Check for at least one valid subdirectory or file
+    const hasRules = fs.existsSync(path.join(rootPath, "rules"));
+    const hasCommands = fs.existsSync(path.join(rootPath, "commands"));
+    const hasHooks = fs.existsSync(path.join(rootPath, "hooks.json"));
 
-  if (hasHooksFile) {
-    const hooksPath = path.resolve(cwd, config.hooksFile as string);
-
-    if (!fs.existsSync(hooksPath)) {
-      throw new Error(`Hooks file does not exist: ${hooksPath}`);
-    }
-
-    if (!fs.statSync(hooksPath).isFile()) {
-      throw new Error(`Hooks path is not a file: ${hooksPath}`);
-    }
-
-    // Validate that it's valid JSON
-    try {
-      const content = fs.readFileSync(hooksPath, "utf8");
-      JSON.parse(content);
-    } catch (error) {
+    // In workspace mode, root config doesn't need these directories
+    // since packages will have their own configurations
+    if (
+      !isWorkspaceMode &&
+      !hasRules &&
+      !hasCommands &&
+      !hasHooks &&
+      !hasPresets
+    ) {
       throw new Error(
-        `Hooks file is not valid JSON: ${hooksPath} - ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Root directory must contain at least one of: rules/, commands/, hooks.json, or have presets configured`,
       );
     }
+  } else if (!isWorkspaceMode && !hasPresets) {
+    // If no rootDir specified and not in workspace mode, must have presets
+    throw new Error(
+      `At least one of rootDir or presets must be specified in config at ${configFilePath}`,
+    );
   }
 
   if ("targets" in config) {
@@ -272,22 +230,20 @@ export function validateConfig(
       }
     }
   }
-
-  // Validate override rule names will be checked after rule resolution
 }
 
 export async function loadRulesFromDirectory(
-  rulesDir: string,
+  directoryPath: string,
   source: "local" | "preset",
   presetName?: string,
 ): Promise<RuleFile[]> {
   const rules: RuleFile[] = [];
 
-  if (!fs.existsSync(rulesDir)) {
+  if (!fs.existsSync(directoryPath)) {
     return rules;
   }
 
-  const pattern = path.join(rulesDir, "**/*.mdc").replace(/\\/g, "/");
+  const pattern = path.join(directoryPath, "**/*.mdc").replace(/\\/g, "/");
   const filePaths = await fg(pattern, {
     onlyFiles: true,
     absolute: true,
@@ -296,8 +252,8 @@ export async function loadRulesFromDirectory(
   for (const filePath of filePaths) {
     const content = await fs.readFile(filePath, "utf8");
 
-    // Preserve directory structure by using relative path from rulesDir
-    const relativePath = path.relative(rulesDir, filePath);
+    // Preserve directory structure by using relative path from source directory
+    const relativePath = path.relative(directoryPath, filePath);
     const ruleName = relativePath.replace(/\.mdc$/, "").replace(/\\/g, "/");
 
     rules.push({
@@ -313,17 +269,17 @@ export async function loadRulesFromDirectory(
 }
 
 export async function loadCommandsFromDirectory(
-  commandsDir: string,
+  directoryPath: string,
   source: "local" | "preset",
   presetName?: string,
 ): Promise<CommandFile[]> {
   const commands: CommandFile[] = [];
 
-  if (!fs.existsSync(commandsDir)) {
+  if (!fs.existsSync(directoryPath)) {
     return commands;
   }
 
-  const pattern = path.join(commandsDir, "**/*.md").replace(/\\/g, "/");
+  const pattern = path.join(directoryPath, "**/*.md").replace(/\\/g, "/");
   const filePaths = await fg(pattern, {
     onlyFiles: true,
     absolute: true,
@@ -333,7 +289,7 @@ export async function loadCommandsFromDirectory(
 
   for (const filePath of filePaths) {
     const content = await fs.readFile(filePath, "utf8");
-    const relativePath = path.relative(commandsDir, filePath);
+    const relativePath = path.relative(directoryPath, filePath);
     const commandName = relativePath.replace(/\.md$/, "").replace(/\\/g, "/");
 
     commands.push({
@@ -349,18 +305,18 @@ export async function loadCommandsFromDirectory(
 }
 
 export async function loadAssetsFromDirectory(
-  rulesDir: string,
+  directoryPath: string,
   source: "local" | "preset",
   presetName?: string,
 ): Promise<AssetFile[]> {
   const assets: AssetFile[] = [];
 
-  if (!fs.existsSync(rulesDir)) {
+  if (!fs.existsSync(directoryPath)) {
     return assets;
   }
 
   // Find all files except .mdc files and hidden files
-  const pattern = path.join(rulesDir, "**/*").replace(/\\/g, "/");
+  const pattern = path.join(directoryPath, "**/*").replace(/\\/g, "/");
   const filePaths = await fg(pattern, {
     onlyFiles: true,
     absolute: true,
@@ -369,8 +325,8 @@ export async function loadAssetsFromDirectory(
 
   for (const filePath of filePaths) {
     const content = await fs.readFile(filePath);
-    // Preserve directory structure by using relative path from rulesDir
-    const relativePath = path.relative(rulesDir, filePath);
+    // Preserve directory structure by using relative path from source directory
+    const relativePath = path.relative(directoryPath, filePath);
     // Keep extension for assets
     const assetName = relativePath.replace(/\\/g, "/");
 
@@ -437,9 +393,7 @@ export async function loadPreset(
   cwd: string,
 ): Promise<{
   config: Config;
-  rulesDir?: string;
-  commandsDir?: string;
-  hooksFile?: string;
+  rootDir: string;
 }> {
   const resolvedPresetPath = resolvePresetPath(presetPath, cwd);
 
@@ -461,27 +415,23 @@ export async function loadPreset(
   }
 
   const presetDir = path.dirname(resolvedPresetPath);
-  const presetRulesDir = presetConfig.rulesDir
-    ? path.resolve(presetDir, presetConfig.rulesDir)
-    : undefined;
-  const presetCommandsDir = presetConfig.commandsDir
-    ? path.resolve(presetDir, presetConfig.commandsDir)
-    : undefined;
-  const presetHooksFile = presetConfig.hooksFile
-    ? path.resolve(presetDir, presetConfig.hooksFile)
-    : undefined;
+  const presetRootDir = path.resolve(presetDir, presetConfig.rootDir || "./");
 
-  if (!presetRulesDir && !presetCommandsDir && !presetHooksFile) {
+  // Check for at least one valid subdirectory
+  const hasRules = fs.existsSync(path.join(presetRootDir, "rules"));
+  const hasCommands = fs.existsSync(path.join(presetRootDir, "commands"));
+  const hasHooks = fs.existsSync(path.join(presetRootDir, "hooks.json"));
+  const hasAssets = fs.existsSync(path.join(presetRootDir, "assets"));
+
+  if (!hasRules && !hasCommands && !hasHooks && !hasAssets) {
     throw new Error(
-      `Preset "${presetPath}" must have a rulesDir, commandsDir, or hooksFile specified`,
+      `Preset "${presetPath}" must have at least one of: rules/, commands/, hooks.json, or assets/`,
     );
   }
 
   return {
     config: presetConfig,
-    rulesDir: presetRulesDir,
-    commandsDir: presetCommandsDir,
-    hooksFile: presetHooksFile,
+    rootDir: presetRootDir,
   };
 }
 
@@ -503,64 +453,90 @@ export async function loadAllRules(
   const allHooksConfigs: HooksJson[] = [];
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
 
-  // Load local rules only if rulesDir is provided
-  if (config.rulesDir) {
-    const localRulesPath = path.resolve(cwd, config.rulesDir);
-    const localRules = await loadRulesFromDirectory(localRulesPath, "local");
-    const localAssets = await loadAssetsFromDirectory(localRulesPath, "local");
-    allRules.push(...localRules);
-    allAssets.push(...localAssets);
+  // Load local files from rootDir only if specified
+  if (config.rootDir) {
+    const rootPath = path.resolve(cwd, config.rootDir);
+
+    // Load rules from rules/ subdirectory
+    const rulesPath = path.join(rootPath, "rules");
+    if (fs.existsSync(rulesPath)) {
+      const localRules = await loadRulesFromDirectory(rulesPath, "local");
+      allRules.push(...localRules);
+    }
+
+    // Load commands from commands/ subdirectory
+    const commandsPath = path.join(rootPath, "commands");
+    if (fs.existsSync(commandsPath)) {
+      const localCommands = await loadCommandsFromDirectory(
+        commandsPath,
+        "local",
+      );
+      allCommands.push(...localCommands);
+    }
+
+    // Load hooks from hooks.json (sibling to hooks/ directory)
+    const hooksFilePath = path.join(rootPath, "hooks.json");
+    if (fs.existsSync(hooksFilePath)) {
+      const { config: localHooksConfig, files: localHookFiles } =
+        await loadHooksFromDirectory(rootPath, "local");
+      allHooksConfigs.push(localHooksConfig);
+      allHookFiles.push(...localHookFiles);
+    }
+
+    // Load assets from assets/ subdirectory
+    const assetsPath = path.join(rootPath, "assets");
+    if (fs.existsSync(assetsPath)) {
+      const localAssets = await loadAssetsFromDirectory(assetsPath, "local");
+      allAssets.push(...localAssets);
+    }
   }
 
-  if (config.commandsDir) {
-    const localCommandsPath = path.resolve(cwd, config.commandsDir);
-    const localCommands = await loadCommandsFromDirectory(
-      localCommandsPath,
-      "local",
-    );
-    allCommands.push(...localCommands);
-  }
-
-  if (config.hooksFile) {
-    const localHooksPath = path.resolve(cwd, config.hooksFile);
-    const { config: localHooksConfig, files: localHookFiles } =
-      await loadHooksFromFile(localHooksPath, "local");
-    allHooksConfigs.push(localHooksConfig);
-    allHookFiles.push(...localHookFiles);
-  }
-
+  // Load presets
   if (config.presets) {
     for (const presetPath of config.presets) {
       const preset = await loadPreset(presetPath, cwd);
-      if (preset.rulesDir) {
+      const presetRootDir = preset.rootDir;
+
+      // Load preset rules from rules/ subdirectory
+      const presetRulesPath = path.join(presetRootDir, "rules");
+      if (fs.existsSync(presetRulesPath)) {
         const presetRules = await loadRulesFromDirectory(
-          preset.rulesDir,
-          "preset",
-          presetPath,
-        );
-        const presetAssets = await loadAssetsFromDirectory(
-          preset.rulesDir,
+          presetRulesPath,
           "preset",
           presetPath,
         );
         allRules.push(...presetRules);
-        allAssets.push(...presetAssets);
       }
 
-      if (preset.commandsDir) {
+      // Load preset commands from commands/ subdirectory
+      const presetCommandsPath = path.join(presetRootDir, "commands");
+      if (fs.existsSync(presetCommandsPath)) {
         const presetCommands = await loadCommandsFromDirectory(
-          preset.commandsDir,
+          presetCommandsPath,
           "preset",
           presetPath,
         );
         allCommands.push(...presetCommands);
       }
 
-      if (preset.hooksFile) {
+      // Load preset hooks from hooks.json (sibling to hooks/ directory)
+      const presetHooksFile = path.join(presetRootDir, "hooks.json");
+      if (fs.existsSync(presetHooksFile)) {
         const { config: presetHooksConfig, files: presetHookFiles } =
-          await loadHooksFromFile(preset.hooksFile, "preset", presetPath);
+          await loadHooksFromDirectory(presetRootDir, "preset", presetPath);
         allHooksConfigs.push(presetHooksConfig);
         allHookFiles.push(...presetHookFiles);
+      }
+
+      // Load preset assets from assets/ subdirectory
+      const presetAssetsPath = path.join(presetRootDir, "assets");
+      if (fs.existsSync(presetAssetsPath)) {
+        const presetAssets = await loadAssetsFromDirectory(
+          presetAssetsPath,
+          "preset",
+          presetPath,
+        );
+        allAssets.push(...presetAssets);
       }
 
       // Merge MCP servers from preset
@@ -586,51 +562,6 @@ export async function loadAllRules(
   };
 }
 
-export function applyOverrides<T extends ManagedFile>(
-  files: T[],
-  overrides: Record<string, string | false>,
-  cwd: string,
-): T[] {
-  // Validate that all override names exist in the resolved files
-  for (const name of Object.keys(overrides)) {
-    if (!files.some((file) => file.name === name)) {
-      throw new Error(
-        `Override entry "${name}" does not exist in resolved files`,
-      );
-    }
-  }
-
-  const fileMap = new Map<string, T>();
-
-  for (const file of files) {
-    fileMap.set(file.name, file);
-  }
-
-  for (const [name, override] of Object.entries(overrides)) {
-    if (override === false) {
-      fileMap.delete(name);
-    } else if (typeof override === "string") {
-      const overridePath = path.resolve(cwd, override);
-      if (!fs.existsSync(overridePath)) {
-        throw new Error(`Override file not found: ${override} in ${cwd}`);
-      }
-
-      const content = fs.readFileSync(overridePath, "utf8");
-      const existing = fileMap.get(name);
-      fileMap.set(name, {
-        ...(existing ?? {}),
-        name,
-        content,
-        sourcePath: overridePath,
-        source: "local",
-        presetName: undefined,
-      } as T);
-    }
-  }
-
-  return Array.from(fileMap.values());
-}
-
 /**
  * Merge preset MCP servers with local config MCP servers
  * Local config takes precedence over preset config
@@ -650,7 +581,7 @@ function mergePresetMcpServers(
       delete newMcpServers[serverName];
       continue;
     }
-    // Only add if not already defined in config (override handled by config)
+    // Only add if not already defined in config (local config takes precedence)
     if (!Object.prototype.hasOwnProperty.call(newMcpServers, serverName)) {
       newMcpServers[serverName] = serverConfig;
     }
@@ -699,48 +630,10 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
   const { rules, commands, assets, mcpServers, hooks, hookFiles } =
     await loadAllRules(configWithDefaults, workingDir);
 
-  let rulesWithOverrides = rules;
-  let commandsWithOverrides = commands;
-  // Note: Assets are not currently supported in overrides as they are binary/varied files
-  // Note: Hooks are not currently supported in overrides
-
-  if (configWithDefaults.overrides) {
-    const overrides = configWithDefaults.overrides;
-    const ruleNames = new Set(rules.map((rule) => rule.name));
-    const commandNames = new Set(commands.map((command) => command.name));
-
-    for (const overrideName of Object.keys(overrides)) {
-      if (!ruleNames.has(overrideName) && !commandNames.has(overrideName)) {
-        throw new Error(
-          `Override entry "${overrideName}" does not exist in resolved rules or commands`,
-        );
-      }
-    }
-
-    const ruleOverrides = Object.fromEntries(
-      Object.entries(overrides).filter(([name]) => ruleNames.has(name)),
-    );
-    const commandOverrides = Object.fromEntries(
-      Object.entries(overrides).filter(([name]) => commandNames.has(name)),
-    );
-
-    if (Object.keys(ruleOverrides).length > 0) {
-      rulesWithOverrides = applyOverrides(rules, ruleOverrides, workingDir);
-    }
-
-    if (Object.keys(commandOverrides).length > 0) {
-      commandsWithOverrides = applyOverrides(
-        commands,
-        commandOverrides,
-        workingDir,
-      );
-    }
-  }
-
   return {
     config: configWithDefaults,
-    rules: rulesWithOverrides,
-    commands: commandsWithOverrides,
+    rules,
+    commands,
     assets,
     mcpServers,
     hooks,

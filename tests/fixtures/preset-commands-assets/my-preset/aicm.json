@@ -1,4 +1,3 @@
 {
-  "rulesDir": "rules",
-  "commandsDir": "commands"
+  "rootDir": "./"
 }
