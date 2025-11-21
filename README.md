@@ -173,9 +173,11 @@ Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appe
 
 ### Using Hooks
 
-aicm supports configuring Cursor Agent Hooks using a simple configuration file. Hooks allow you to intercept and extend the agent's behavior.
+aicm provides first-class support for [Cursor Agent Hooks](https://docs.cursor.com/advanced/hooks), allowing you to intercept and extend the agent's behavior. Hooks enable you to run custom scripts before/after shell execution, file edits, MCP calls, and more.
 
-1. Add a hooks file to your configuration:
+#### Basic Setup
+
+1. Add a `hooksFile` to your `aicm.json`:
 
 ```json
 {
@@ -184,38 +186,81 @@ aicm supports configuring Cursor Agent Hooks using a simple configuration file. 
 }
 ```
 
-2. Create your `hooks.json` file:
+2. Create your `hooks.json` file with the hooks configuration:
 
 ```json
 {
   "version": 1,
   "hooks": {
-    "beforeShellExecution": [
-      { "command": "./hooks/audit.sh" },
-      { "command": "./hooks/block-git.sh" }
-    ],
-    "afterFileEdit": [{ "command": "./hooks/format.sh" }]
+    "beforeShellExecution": [{ "command": "./scripts/audit.sh" }],
+    "afterFileEdit": [{ "command": "./scripts/format.js" }]
   }
 }
 ```
 
-3. Create your hook scripts in the referenced locations.
-
-It's recommeneded to use `hooks` directory to store your hook scripts and related files:
+3. Create your hook scripts in the referenced locations:
 
 ```
-├── hooks/
-│   ├── audit.sh
-│   ├── format.sh
-│   └── block-git.sh
+my-project/
+├── aicm.json
+├── hooks.json
+└── scripts/
+    ├── audit.sh
+    └── format.js
 ```
 
-When installed, aicm will:
+#### Installation Behavior
 
-- Copy your hook scripts to `.cursor/hooks/aicm/` (using basename deduplication)
-- Update `.cursor/hooks.json` to point to the installed scripts
-- Merge hooks from presets and workspaces automatically
-- Preserve any user-managed hooks in `.cursor/hooks.json`
+When you run `aicm install`, the following happens:
+
+1. **File Collection**: Hook scripts referenced in your `hooks.json` are collected
+2. **Path Rewriting**: Relative paths are rewritten to point to `.cursor/hooks/aicm/`
+3. **File Installation**: Scripts are copied to `.cursor/hooks/aicm/` or `.cursor/hooks/aicm/<preset-name>/` (for hooks coming from a preset)
+4. **Config Merging**: Your hooks are merged into `.cursor/hooks.json`
+
+#### Preset Namespacing
+
+aicm uses directory-based namespacing to prevent collisions:
+
+```
+.cursor/hooks/aicm/
+├── preset-a/
+│   └── validate.sh    # From preset-a
+└── preset-b/
+    └── validate.sh    # From preset-b
+```
+
+#### Workspace Support
+
+In monorepo/workspace mode, hooks are:
+
+- Installed individually for each package (in `package-x/.cursor/hooks.json`)
+- Merged and installed at the root (in `.cursor/hooks.json`)
+- Deduplicated by full path (including preset namespace)
+
+**Example workspace structure:**
+
+```
+my-monorepo/
+├── aicm.json (workspaces: true)
+├── .cursor/hooks.json (merged from all packages)
+├── package-a/
+│   ├── aicm.json
+│   ├── hooks.json
+│   └── .cursor/hooks.json (package-specific)
+└── package-b/
+    ├── aicm.json
+    ├── hooks.json
+    └── .cursor/hooks.json (package-specific)
+```
+
+#### Content Collision Detection
+
+If the same hook file (by path) has different content across workspace packages, aicm will:
+
+1. Warn you about the collision with full source information
+2. Use the last occurrence (last-writer-wins)
+3. Continue installation
 
 ### MCP Servers
 

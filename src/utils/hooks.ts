@@ -194,15 +194,6 @@ export function mergeHooksConfigs(configs: HooksJson[]): HooksJson {
 }
 
 /**
- * No-op function kept for compatibility
- * Path rewriting now happens in loadHooksFromFile per-source
- */
-export function rewriteHooksConfigPaths(hooksConfig: HooksJson): HooksJson {
-  // Paths are already rewritten to namespaced names in loadHooksFromFile
-  return hooksConfig;
-}
-
-/**
  * Rewrite command paths to point to the managed hooks directory (hooks/aicm/)
  * At this point, paths are already namespaced filenames from loadHooksFromFile
  */
@@ -320,9 +311,7 @@ export function writeHooksToCursor(
     fs.writeFileSync(targetPath, hookFile.content);
   }
 
-  // Rewrite paths in hooks config to point to managed directory
-  const rewrittenConfig = rewriteHooksConfigPaths(hooksConfig);
-  const finalConfig = rewriteHooksConfigToManagedDir(rewrittenConfig);
+  const finalConfig = rewriteHooksConfigToManagedDir(hooksConfig);
 
   // Read existing hooks.json if it exists
   let existingConfig: HooksJson | null = null;
