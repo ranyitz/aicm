@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "./assets/hooks/validate.sh"
+      },
+      {
+        "command": "./assets/hooks/helper.js"
+      }
+    ]
+  }
+}

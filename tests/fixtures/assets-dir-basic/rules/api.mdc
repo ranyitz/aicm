@@ -1,0 +1,5 @@
+# API Guidelines
+
+Use the schema defined at [schema.json](../assets/schema.json) for all API responses.
+
+You can also reference the example: `../assets/examples/response.json`

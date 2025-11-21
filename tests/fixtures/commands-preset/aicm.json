@@ -1,4 +1,4 @@
 {
-  "presets": ["./preset"],
-  "commandsDir": "./commands"
+  "rootDir": "./",
+  "presets": ["./preset"]
 }

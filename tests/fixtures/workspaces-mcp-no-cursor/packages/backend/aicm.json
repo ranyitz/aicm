@@ -1,5 +1,5 @@
 {
-  "rulesDir": "./rules",
+  "rootDir": "./",
   "targets": ["codex"],
   "mcpServers": {
     "backend-mcp": {

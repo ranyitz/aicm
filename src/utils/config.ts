@@ -10,9 +10,7 @@ import {
 } from "./hooks";
 
 export interface RawConfig {
-  rulesDir?: string;
-  commandsDir?: string;
-  hooksFile?: string;
+  rootDir?: string;
   targets?: string[];
   presets?: string[];
   overrides?: Record<string, string | false>;
@@ -22,9 +20,7 @@ export interface RawConfig {
 }
 
 export interface Config {
-  rulesDir?: string;
-  commandsDir?: string;
-  hooksFile?: string;
+  rootDir: string;
   targets: string[];
   presets?: string[];
   overrides?: Record<string, string | false>;
@@ -87,9 +83,7 @@ export interface ResolvedConfig {
 }
 
 export const ALLOWED_CONFIG_KEYS = [
-  "rulesDir",
-  "commandsDir",
-  "hooksFile",
+  "rootDir",
   "targets",
   "presets",
   "overrides",
@@ -143,9 +137,7 @@ export function resolveWorkspaces(
 
 export function applyDefaults(config: RawConfig, workspaces: boolean): Config {
   return {
-    rulesDir: config.rulesDir,
-    commandsDir: config.commandsDir,
-    hooksFile: config.hooksFile,
+    rootDir: config.rootDir || "./",
     targets: config.targets || ["cursor"],
     presets: config.presets || [],
     overrides: config.overrides || {},
@@ -178,77 +170,47 @@ export function validateConfig(
     );
   }
 
-  // Validate that either rulesDir, commandsDir, hooksFile or presets is provided
-  const hasRulesDir =
-    "rulesDir" in config && typeof config.rulesDir === "string";
-  const hasCommandsDir =
-    "commandsDir" in config && typeof config.commandsDir === "string";
-  const hasHooksFile =
-    "hooksFile" in config && typeof config.hooksFile === "string";
+  // Validate rootDir
+  const hasRootDir = "rootDir" in config && typeof config.rootDir === "string";
   const hasPresets =
     "presets" in config &&
     Array.isArray(config.presets) &&
     config.presets.length > 0;
 
-  // In workspace mode, root config doesn't need rulesDir or presets
-  // since packages will have their own configurations
-  if (
-    !isWorkspaceMode &&
-    !hasRulesDir &&
-    !hasPresets &&
-    !hasCommandsDir &&
-    !hasHooksFile
-  ) {
-    throw new Error(
-      `At least one of rulesDir, commandsDir, hooksFile, or presets must be specified in config at ${configFilePath}`,
-    );
-  }
+  if (hasRootDir) {
+    const rootPath = path.resolve(cwd, config.rootDir as string);
 
-  // Validate rulesDir if provided
-  if (hasRulesDir) {
-    const rulesPath = path.resolve(cwd, config.rulesDir as string);
-
-    if (!fs.existsSync(rulesPath)) {
-      throw new Error(`Rules directory does not exist: ${rulesPath}`);
+    if (!fs.existsSync(rootPath)) {
+      throw new Error(`Root directory does not exist: ${rootPath}`);
     }
 
-    if (!fs.statSync(rulesPath).isDirectory()) {
-      throw new Error(`Rules path is not a directory: ${rulesPath}`);
-    }
-  }
-
-  if (hasCommandsDir) {
-    const commandsPath = path.resolve(cwd, config.commandsDir as string);
-
-    if (!fs.existsSync(commandsPath)) {
-      throw new Error(`Commands directory does not exist: ${commandsPath}`);
+    if (!fs.statSync(rootPath).isDirectory()) {
+      throw new Error(`Root path is not a directory: ${rootPath}`);
     }
 
-    if (!fs.statSync(commandsPath).isDirectory()) {
-      throw new Error(`Commands path is not a directory: ${commandsPath}`);
-    }
-  }
+    // Check for at least one valid subdirectory or file
+    const hasRules = fs.existsSync(path.join(rootPath, "rules"));
+    const hasCommands = fs.existsSync(path.join(rootPath, "commands"));
+    const hasHooks = fs.existsSync(path.join(rootPath, "hooks.json"));
 
-  if (hasHooksFile) {
-    const hooksPath = path.resolve(cwd, config.hooksFile as string);
-
-    if (!fs.existsSync(hooksPath)) {
-      throw new Error(`Hooks file does not exist: ${hooksPath}`);
-    }
-
-    if (!fs.statSync(hooksPath).isFile()) {
-      throw new Error(`Hooks path is not a file: ${hooksPath}`);
-    }
-
-    // Validate that it's valid JSON
-    try {
-      const content = fs.readFileSync(hooksPath, "utf8");
-      JSON.parse(content);
-    } catch (error) {
+    // In workspace mode, root config doesn't need these directories
+    // since packages will have their own configurations
+    if (
+      !isWorkspaceMode &&
+      !hasRules &&
+      !hasCommands &&
+      !hasHooks &&
+      !hasPresets
+    ) {
       throw new Error(
-        `Hooks file is not valid JSON: ${hooksPath} - ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Root directory must contain at least one of: rules/, commands/, hooks.json, or have presets configured`,
       );
     }
+  } else if (!isWorkspaceMode && !hasPresets) {
+    // If no rootDir specified and not in workspace mode, must have presets
+    throw new Error(
+      `At least one of rootDir or presets must be specified in config at ${configFilePath}`,
+    );
   }
 
   if ("targets" in config) {
@@ -437,9 +399,7 @@ export async function loadPreset(
   cwd: string,
 ): Promise<{
   config: Config;
-  rulesDir?: string;
-  commandsDir?: string;
-  hooksFile?: string;
+  rootDir: string;
 }> {
   const resolvedPresetPath = resolvePresetPath(presetPath, cwd);
 
@@ -461,27 +421,23 @@ export async function loadPreset(
   }
 
   const presetDir = path.dirname(resolvedPresetPath);
-  const presetRulesDir = presetConfig.rulesDir
-    ? path.resolve(presetDir, presetConfig.rulesDir)
-    : undefined;
-  const presetCommandsDir = presetConfig.commandsDir
-    ? path.resolve(presetDir, presetConfig.commandsDir)
-    : undefined;
-  const presetHooksFile = presetConfig.hooksFile
-    ? path.resolve(presetDir, presetConfig.hooksFile)
-    : undefined;
+  const presetRootDir = path.resolve(presetDir, presetConfig.rootDir || "./");
 
-  if (!presetRulesDir && !presetCommandsDir && !presetHooksFile) {
+  // Check for at least one valid subdirectory
+  const hasRules = fs.existsSync(path.join(presetRootDir, "rules"));
+  const hasCommands = fs.existsSync(path.join(presetRootDir, "commands"));
+  const hasHooks = fs.existsSync(path.join(presetRootDir, "hooks.json"));
+  const hasAssets = fs.existsSync(path.join(presetRootDir, "assets"));
+
+  if (!hasRules && !hasCommands && !hasHooks && !hasAssets) {
     throw new Error(
-      `Preset "${presetPath}" must have a rulesDir, commandsDir, or hooksFile specified`,
+      `Preset "${presetPath}" must have at least one of: rules/, commands/, hooks.json, or assets/`,
     );
   }
 
   return {
     config: presetConfig,
-    rulesDir: presetRulesDir,
-    commandsDir: presetCommandsDir,
-    hooksFile: presetHooksFile,
+    rootDir: presetRootDir,
   };
 }
 
@@ -503,64 +459,88 @@ export async function loadAllRules(
   const allHooksConfigs: HooksJson[] = [];
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
 
-  // Load local rules only if rulesDir is provided
-  if (config.rulesDir) {
-    const localRulesPath = path.resolve(cwd, config.rulesDir);
-    const localRules = await loadRulesFromDirectory(localRulesPath, "local");
-    const localAssets = await loadAssetsFromDirectory(localRulesPath, "local");
+  // Load local files from rootDir
+  const rootPath = path.resolve(cwd, config.rootDir);
+
+  // Load rules from rules/ subdirectory
+  const rulesPath = path.join(rootPath, "rules");
+  if (fs.existsSync(rulesPath)) {
+    const localRules = await loadRulesFromDirectory(rulesPath, "local");
     allRules.push(...localRules);
-    allAssets.push(...localAssets);
   }
 
-  if (config.commandsDir) {
-    const localCommandsPath = path.resolve(cwd, config.commandsDir);
+  // Load commands from commands/ subdirectory
+  const commandsPath = path.join(rootPath, "commands");
+  if (fs.existsSync(commandsPath)) {
     const localCommands = await loadCommandsFromDirectory(
-      localCommandsPath,
+      commandsPath,
       "local",
     );
     allCommands.push(...localCommands);
   }
 
-  if (config.hooksFile) {
-    const localHooksPath = path.resolve(cwd, config.hooksFile);
+  // Load hooks from hooks.json file
+  const hooksFilePath = path.join(rootPath, "hooks.json");
+  if (fs.existsSync(hooksFilePath)) {
     const { config: localHooksConfig, files: localHookFiles } =
-      await loadHooksFromFile(localHooksPath, "local");
+      await loadHooksFromFile(hooksFilePath, "local");
     allHooksConfigs.push(localHooksConfig);
     allHookFiles.push(...localHookFiles);
   }
 
+  // Load assets from assets/ subdirectory
+  const assetsPath = path.join(rootPath, "assets");
+  if (fs.existsSync(assetsPath)) {
+    const localAssets = await loadAssetsFromDirectory(assetsPath, "local");
+    allAssets.push(...localAssets);
+  }
+
+  // Load presets
   if (config.presets) {
     for (const presetPath of config.presets) {
       const preset = await loadPreset(presetPath, cwd);
-      if (preset.rulesDir) {
+      const presetRootDir = preset.rootDir;
+
+      // Load preset rules from rules/ subdirectory
+      const presetRulesPath = path.join(presetRootDir, "rules");
+      if (fs.existsSync(presetRulesPath)) {
         const presetRules = await loadRulesFromDirectory(
-          preset.rulesDir,
-          "preset",
-          presetPath,
-        );
-        const presetAssets = await loadAssetsFromDirectory(
-          preset.rulesDir,
+          presetRulesPath,
           "preset",
           presetPath,
         );
         allRules.push(...presetRules);
-        allAssets.push(...presetAssets);
       }
 
-      if (preset.commandsDir) {
+      // Load preset commands from commands/ subdirectory
+      const presetCommandsPath = path.join(presetRootDir, "commands");
+      if (fs.existsSync(presetCommandsPath)) {
         const presetCommands = await loadCommandsFromDirectory(
-          preset.commandsDir,
+          presetCommandsPath,
           "preset",
           presetPath,
         );
         allCommands.push(...presetCommands);
       }
 
-      if (preset.hooksFile) {
+      // Load preset hooks from hooks.json
+      const presetHooksFile = path.join(presetRootDir, "hooks.json");
+      if (fs.existsSync(presetHooksFile)) {
         const { config: presetHooksConfig, files: presetHookFiles } =
-          await loadHooksFromFile(preset.hooksFile, "preset", presetPath);
+          await loadHooksFromFile(presetHooksFile, "preset", presetPath);
         allHooksConfigs.push(presetHooksConfig);
         allHookFiles.push(...presetHookFiles);
+      }
+
+      // Load preset assets from assets/ subdirectory
+      const presetAssetsPath = path.join(presetRootDir, "assets");
+      if (fs.existsSync(presetAssetsPath)) {
+        const presetAssets = await loadAssetsFromDirectory(
+          presetAssetsPath,
+          "preset",
+          presetPath,
+        );
+        allAssets.push(...presetAssets);
       }
 
       // Merge MCP servers from preset

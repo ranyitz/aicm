@@ -185,6 +185,7 @@ function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
   const dirsToCheck = [
     path.join(cwd, ".cursor", "rules"),
     path.join(cwd, ".cursor", "commands"),
+    path.join(cwd, ".cursor", "assets"),
     path.join(cwd, ".cursor", "hooks"),
     path.join(cwd, ".cursor"),
   ];
@@ -220,6 +221,7 @@ export async function cleanPackage(
     const filesToClean = [
       path.join(cwd, ".cursor", "rules", "aicm"),
       path.join(cwd, ".cursor", "commands", "aicm"),
+      path.join(cwd, ".cursor", "assets", "aicm"),
       path.join(cwd, ".aicm"),
     ];
 
