@@ -13,7 +13,7 @@ A CLI tool for managing Agentic configurations across projects.
 - [Getting Started](#getting-started)
   - [Creating a Preset](#creating-a-preset)
   - [Using a Preset](#using-a-preset)
-  - [Features](#features)
+- [Features](#features)
   - [Rules](#using-rules)
   - [Commands](#using-commands)
   - [Hooks](#using-hooks)
