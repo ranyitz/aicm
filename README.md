@@ -23,6 +23,7 @@ A CLI tool for managing Agentic configurations across projects.
 - [Configuration](#configuration)
 - [CLI Commands](#cli-commands)
 - [Node.js API](#nodejs-api)
+- [FAQ](#faq)
 
 ## Why
 
@@ -558,6 +559,50 @@ install({
 ## Security Note
 
 To prevent [prompt-injection](https://en.wikipedia.org/wiki/Prompt_injection), use only packages from trusted sources.
+
+## FAQ
+
+### Can I reference rules from commands or vice versa?
+
+**No, direct references between rules and commands are not supported.** This is because:
+
+- **Commands are hoisted** to the root level in workspace mode (`.cursor/commands/aicm/`)
+- **Rules remain nested** at the package level (`package-a/.cursor/rules/aicm/`)
+- This creates broken relative paths when commands try to reference rules
+
+**❌ Don't do this:**
+
+```markdown
+<!-- commands/validate.md -->
+
+Follow the rules in [api-rule.mdc](../rules/api-rule.mdc) <!-- BROKEN! -->
+```
+
+**✅ Do this instead:**
+
+```markdown
+<!-- Put shared content in assets/coding-standards.md -->
+
+# Coding Standards
+
+- Use TypeScript for all new code
+- Follow ESLint rules
+- Write unit tests for all functions
+```
+
+```markdown
+<!-- rules/api-rule.mdc -->
+
+Follow the coding standards in [coding-standards.md](../assets/coding-standards.md).
+```
+
+```markdown
+<!-- commands/validate.md -->
+
+Validate against our [coding standards](../assets/coding-standards.md).
+```
+
+Use shared assets for content that needs to be referenced by both rules and commands. Assets are properly rewritten and work in all modes.
 
 ## Contributing
 
