@@ -8,6 +8,7 @@ import {
   RuleFile,
   CommandFile,
   AssetFile,
+  SkillFile,
   MCPServers,
   SupportedTarget,
   detectWorkspacesFromPackageJson,
@@ -78,6 +79,10 @@ export interface InstallResult {
    * Number of hooks installed
    */
   installedHookCount: number;
+  /**
+   * Number of skills installed
+   */
+  installedSkillCount: number;
   /**
    * Number of packages installed
    */
@@ -357,6 +362,139 @@ export function writeCommandsToTargets(
   }
 }
 
+/**
+ * Metadata file written inside each installed skill to track aicm management
+ * The presence of .aicm.json indicates the skill is managed by aicm
+ */
+interface SkillAicmMetadata {
+  source: "local" | "preset";
+  presetName?: string;
+}
+
+/**
+ * Get the skills installation path for a target
+ * Returns null for targets that don't support skills
+ */
+function getSkillsTargetPath(target: SupportedTarget): string | null {
+  const projectDir = process.cwd();
+
+  switch (target) {
+    case "cursor":
+      return path.join(projectDir, ".cursor", "skills");
+    case "claude":
+      return path.join(projectDir, ".claude", "skills");
+    case "codex":
+      return path.join(projectDir, ".codex", "skills");
+    case "windsurf":
+      // Windsurf does not support skills
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Write a single skill to the target directory
+ * Copies the entire skill directory and writes .aicm.json metadata
+ */
+function writeSkillToTarget(skill: SkillFile, targetSkillsDir: string): void {
+  const skillTargetPath = path.join(targetSkillsDir, skill.name);
+
+  // Remove existing skill directory if it exists (to ensure clean install)
+  if (fs.existsSync(skillTargetPath)) {
+    fs.removeSync(skillTargetPath);
+  }
+
+  // Copy the entire skill directory
+  fs.copySync(skill.sourcePath, skillTargetPath);
+
+  // Write .aicm.json metadata file
+  // The presence of this file indicates the skill is managed by aicm
+  const metadata: SkillAicmMetadata = {
+    source: skill.source,
+  };
+
+  if (skill.presetName) {
+    metadata.presetName = skill.presetName;
+  }
+
+  const metadataPath = path.join(skillTargetPath, ".aicm.json");
+  fs.writeJsonSync(metadataPath, metadata, { spaces: 2 });
+}
+
+/**
+ * Write skills to all supported target directories
+ */
+export function writeSkillsToTargets(
+  skills: SkillFile[],
+  targets: SupportedTarget[],
+): void {
+  if (skills.length === 0) return;
+
+  for (const target of targets) {
+    const targetSkillsDir = getSkillsTargetPath(target);
+
+    if (!targetSkillsDir) {
+      // Target doesn't support skills
+      continue;
+    }
+
+    // Ensure the skills directory exists
+    fs.ensureDirSync(targetSkillsDir);
+
+    for (const skill of skills) {
+      writeSkillToTarget(skill, targetSkillsDir);
+    }
+  }
+}
+
+/**
+ * Warn about skill name collisions from different presets
+ */
+export function warnPresetSkillCollisions(skills: SkillFile[]): void {
+  const collisions = new Map<
+    string,
+    { presets: Set<string>; lastPreset: string }
+  >();
+
+  for (const skill of skills) {
+    if (!skill.presetName) continue;
+
+    const entry = collisions.get(skill.name);
+    if (entry) {
+      entry.presets.add(skill.presetName);
+      entry.lastPreset = skill.presetName;
+    } else {
+      collisions.set(skill.name, {
+        presets: new Set([skill.presetName]),
+        lastPreset: skill.presetName,
+      });
+    }
+  }
+
+  for (const [skillName, { presets, lastPreset }] of collisions) {
+    if (presets.size > 1) {
+      const presetList = Array.from(presets).sort().join(", ");
+      console.warn(
+        chalk.yellow(
+          `Warning: multiple presets provide the "${skillName}" skill (${presetList}). Using definition from ${lastPreset}.`,
+        ),
+      );
+    }
+  }
+}
+
+/**
+ * Dedupe skills by name (last one wins)
+ */
+export function dedupeSkillsForInstall(skills: SkillFile[]): SkillFile[] {
+  const unique = new Map<string, SkillFile>();
+  for (const skill of skills) {
+    unique.set(skill.name, skill);
+  }
+  return Array.from(unique.values());
+}
+
 export function warnPresetCommandCollisions(commands: CommandFile[]): void {
   const collisions = new Map<
     string,
@@ -519,12 +657,21 @@ export async function installPackage(
         installedCommandCount: 0,
         installedAssetCount: 0,
         installedHookCount: 0,
+        installedSkillCount: 0,
         packagesCount: 0,
       };
     }
 
-    const { config, rules, commands, assets, mcpServers, hooks, hookFiles } =
-      resolvedConfig;
+    const {
+      config,
+      rules,
+      commands,
+      assets,
+      skills,
+      mcpServers,
+      hooks,
+      hookFiles,
+    } = resolvedConfig;
 
     if (config.skipInstall === true) {
       return {
@@ -533,6 +680,7 @@ export async function installPackage(
         installedCommandCount: 0,
         installedAssetCount: 0,
         installedHookCount: 0,
+        installedSkillCount: 0,
         packagesCount: 0,
       };
     }
@@ -540,12 +688,20 @@ export async function installPackage(
     warnPresetCommandCollisions(commands);
     const commandsToInstall = dedupeCommandsForInstall(commands);
 
+    warnPresetSkillCollisions(skills);
+    const skillsToInstall = dedupeSkillsForInstall(skills);
+
     try {
       if (!options.dryRun) {
         writeRulesToTargets(rules, assets, config.targets as SupportedTarget[]);
 
         writeCommandsToTargets(
           commandsToInstall,
+          config.targets as SupportedTarget[],
+        );
+
+        writeSkillsToTargets(
+          skillsToInstall,
           config.targets as SupportedTarget[],
         );
 
@@ -572,6 +728,7 @@ export async function installPackage(
         commandsToInstall.map((command) => command.name),
       ).size;
       const uniqueHookCount = countHooks(hooks);
+      const uniqueSkillCount = skillsToInstall.length;
 
       return {
         success: true,
@@ -579,6 +736,7 @@ export async function installPackage(
         installedCommandCount: uniqueCommandCount,
         installedAssetCount: assets.length,
         installedHookCount: uniqueHookCount,
+        installedSkillCount: uniqueSkillCount,
         packagesCount: 1,
       };
     } catch (error) {
@@ -589,6 +747,7 @@ export async function installPackage(
         installedCommandCount: 0,
         installedAssetCount: 0,
         installedHookCount: 0,
+        installedSkillCount: 0,
         packagesCount: 0,
       };
     }
@@ -614,6 +773,7 @@ export async function install(
       installedCommandCount: 0,
       installedAssetCount: 0,
       installedHookCount: 0,
+      installedSkillCount: 0,
       packagesCount: 0,
     };
   }
@@ -660,6 +820,7 @@ export async function installCommand(
     const ruleCount = result.installedRuleCount;
     const commandCount = result.installedCommandCount;
     const hookCount = result.installedHookCount;
+    const skillCount = result.installedSkillCount;
     const ruleMessage =
       ruleCount > 0 ? `${ruleCount} rule${ruleCount === 1 ? "" : "s"}` : null;
     const commandMessage =
@@ -668,6 +829,10 @@ export async function installCommand(
         : null;
     const hookMessage =
       hookCount > 0 ? `${hookCount} hook${hookCount === 1 ? "" : "s"}` : null;
+    const skillMessage =
+      skillCount > 0
+        ? `${skillCount} skill${skillCount === 1 ? "" : "s"}`
+        : null;
     const countsParts: string[] = [];
     if (ruleMessage) {
       countsParts.push(ruleMessage);
@@ -677,6 +842,9 @@ export async function installCommand(
     }
     if (hookMessage) {
       countsParts.push(hookMessage);
+    }
+    if (skillMessage) {
+      countsParts.push(skillMessage);
     }
     const countsMessage =
       countsParts.length > 0
@@ -691,8 +859,13 @@ export async function installCommand(
       } else {
         console.log(`Dry run: validated ${countsMessage}`);
       }
-    } else if (ruleCount === 0 && commandCount === 0 && hookCount === 0) {
-      console.log("No rules, commands, or hooks installed");
+    } else if (
+      ruleCount === 0 &&
+      commandCount === 0 &&
+      hookCount === 0 &&
+      skillCount === 0
+    ) {
+      console.log("No rules, commands, hooks, or skills installed");
     } else if (result.packagesCount > 1) {
       console.log(
         `Successfully installed ${countsMessage} across ${result.packagesCount} packages`,

@@ -1,0 +1,4 @@
+{
+  "rootDir": "./",
+  "targets": ["cursor", "claude", "codex"]
+}

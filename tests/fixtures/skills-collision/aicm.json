@@ -1,0 +1,5 @@
+{
+  "rootDir": "./",
+  "targets": ["cursor"],
+  "presets": ["./preset-a", "./preset-b"]
+}
