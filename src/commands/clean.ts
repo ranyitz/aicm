@@ -179,6 +179,64 @@ function cleanHooks(cwd: string, verbose: boolean): boolean {
   return hasChanges;
 }
 
+/**
+ * Clean aicm-managed skills from a skills directory
+ * Only removes skills that have .aicm.json (presence indicates aicm management)
+ */
+function cleanSkills(cwd: string, verbose: boolean): number {
+  let cleanedCount = 0;
+
+  // Skills directories for each target
+  const skillsDirs = [
+    path.join(cwd, ".cursor", "skills"),
+    path.join(cwd, ".claude", "skills"),
+    path.join(cwd, ".codex", "skills"),
+  ];
+
+  for (const skillsDir of skillsDirs) {
+    if (!fs.existsSync(skillsDir)) {
+      continue;
+    }
+
+    try {
+      const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+
+        const skillPath = path.join(skillsDir, entry.name);
+        const metadataPath = path.join(skillPath, ".aicm.json");
+
+        // Only clean skills that have .aicm.json (presence indicates aicm management)
+        if (fs.existsSync(metadataPath)) {
+          fs.removeSync(skillPath);
+          if (verbose) {
+            console.log(chalk.gray(`  Removed skill ${skillPath}`));
+          }
+          cleanedCount++;
+        }
+      }
+
+      // Remove the skills directory if it's now empty
+      const remainingEntries = fs.readdirSync(skillsDir);
+      if (remainingEntries.length === 0) {
+        fs.removeSync(skillsDir);
+        if (verbose) {
+          console.log(chalk.gray(`  Removed empty directory ${skillsDir}`));
+        }
+      }
+    } catch {
+      console.warn(
+        chalk.yellow(`Warning: Failed to clean skills in ${skillsDir}`),
+      );
+    }
+  }
+
+  return cleanedCount;
+}
+
 function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
   let cleanedCount = 0;
 
@@ -187,7 +245,12 @@ function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
     path.join(cwd, ".cursor", "commands"),
     path.join(cwd, ".cursor", "assets"),
     path.join(cwd, ".cursor", "hooks"),
+    path.join(cwd, ".cursor", "skills"),
     path.join(cwd, ".cursor"),
+    path.join(cwd, ".claude", "skills"),
+    path.join(cwd, ".claude"),
+    path.join(cwd, ".codex", "skills"),
+    path.join(cwd, ".codex"),
   ];
 
   for (const dir of dirsToCheck) {
@@ -246,6 +309,9 @@ export async function cleanPackage(
 
     // Clean hooks
     if (cleanHooks(cwd, verbose)) cleanedCount++;
+
+    // Clean skills
+    cleanedCount += cleanSkills(cwd, verbose);
 
     // Clean empty directories
     cleanedCount += cleanEmptyDirectories(cwd, verbose);

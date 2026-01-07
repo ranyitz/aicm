@@ -1,0 +1,7 @@
+{
+  "name": "skills-workspace-root",
+  "workspaces": [
+    "package-a",
+    "package-b"
+  ]
+}

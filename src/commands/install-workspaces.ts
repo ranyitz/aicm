@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   ResolvedConfig,
   CommandFile,
+  SkillFile,
   MCPServers,
   SupportedTarget,
 } from "../utils/config";
@@ -21,8 +22,11 @@ import {
   InstallResult,
   writeCommandsToTargets,
   writeAssetsToTargets,
+  writeSkillsToTargets,
   warnPresetCommandCollisions,
+  warnPresetSkillCollisions,
   dedupeCommandsForInstall,
+  dedupeSkillsForInstall,
   writeMcpServersToFile,
 } from "./install";
 
@@ -68,6 +72,71 @@ function collectWorkspaceCommandTargets(
   for (const pkg of packages) {
     if (pkg.config.config.targets.includes("cursor")) {
       targets.add("cursor");
+    }
+  }
+
+  return Array.from(targets);
+}
+
+/**
+ * Merge skills from multiple workspace packages
+ * Skills are merged flat (not namespaced by preset)
+ * Dedupes preset skills that appear in multiple packages
+ */
+function mergeWorkspaceSkills(
+  packages: Array<{
+    relativePath: string;
+    config: ResolvedConfig;
+  }>,
+): SkillFile[] {
+  const skills: SkillFile[] = [];
+  const seenPresetSkills = new Set<string>();
+
+  for (const pkg of packages) {
+    // Skills are supported by cursor, claude, and codex targets
+    const hasSkillsTarget =
+      pkg.config.config.targets.includes("cursor") ||
+      pkg.config.config.targets.includes("claude") ||
+      pkg.config.config.targets.includes("codex");
+
+    if (!hasSkillsTarget) {
+      continue;
+    }
+
+    for (const skill of pkg.config.skills ?? []) {
+      if (skill.presetName) {
+        // Dedupe preset skills by preset+name combination
+        const presetKey = `${skill.presetName}::${skill.name}`;
+        if (seenPresetSkills.has(presetKey)) {
+          continue;
+        }
+        seenPresetSkills.add(presetKey);
+      }
+
+      skills.push(skill);
+    }
+  }
+
+  return skills;
+}
+
+/**
+ * Collect all targets that support skills from workspace packages
+ */
+function collectWorkspaceSkillTargets(
+  packages: Array<{
+    relativePath: string;
+    config: ResolvedConfig;
+  }>,
+): SupportedTarget[] {
+  const targets = new Set<SupportedTarget>();
+
+  for (const pkg of packages) {
+    for (const target of pkg.config.config.targets) {
+      // Skills are supported by cursor, claude, and codex
+      if (target === "cursor" || target === "claude" || target === "codex") {
+        targets.add(target as SupportedTarget);
+      }
     }
   }
 
@@ -173,11 +242,13 @@ async function installWorkspacesPackages(
     installedCommandCount: number;
     installedAssetCount: number;
     installedHookCount: number;
+    installedSkillCount: number;
   }>;
   totalRuleCount: number;
   totalCommandCount: number;
   totalAssetCount: number;
   totalHookCount: number;
+  totalSkillCount: number;
 }> {
   const results: Array<{
     path: string;
@@ -187,11 +258,13 @@ async function installWorkspacesPackages(
     installedCommandCount: number;
     installedAssetCount: number;
     installedHookCount: number;
+    installedSkillCount: number;
   }> = [];
   let totalRuleCount = 0;
   let totalCommandCount = 0;
   let totalAssetCount = 0;
   let totalHookCount = 0;
+  let totalSkillCount = 0;
 
   // Install packages sequentially for now (can be parallelized later)
   for (const pkg of packages) {
@@ -208,6 +281,7 @@ async function installWorkspacesPackages(
       totalCommandCount += result.installedCommandCount;
       totalAssetCount += result.installedAssetCount;
       totalHookCount += result.installedHookCount;
+      totalSkillCount += result.installedSkillCount;
 
       results.push({
         path: pkg.relativePath,
@@ -217,6 +291,7 @@ async function installWorkspacesPackages(
         installedCommandCount: result.installedCommandCount,
         installedAssetCount: result.installedAssetCount,
         installedHookCount: result.installedHookCount,
+        installedSkillCount: result.installedSkillCount,
       });
     } catch (error) {
       results.push({
@@ -227,6 +302,7 @@ async function installWorkspacesPackages(
         installedCommandCount: 0,
         installedAssetCount: 0,
         installedHookCount: 0,
+        installedSkillCount: 0,
       });
     }
   }
@@ -240,6 +316,7 @@ async function installWorkspacesPackages(
     totalCommandCount,
     totalAssetCount,
     totalHookCount,
+    totalSkillCount,
   };
 }
 
@@ -267,12 +344,13 @@ export async function installWorkspaces(
       const isRoot = pkg.relativePath === ".";
       if (!isRoot) return true;
 
-      // For root directories, only keep if it has rules, commands, or presets
+      // For root directories, only keep if it has rules, commands, skills, or presets
       const hasRules = pkg.config.rules && pkg.config.rules.length > 0;
       const hasCommands = pkg.config.commands && pkg.config.commands.length > 0;
+      const hasSkills = pkg.config.skills && pkg.config.skills.length > 0;
       const hasPresets =
         pkg.config.config.presets && pkg.config.config.presets.length > 0;
-      return hasRules || hasCommands || hasPresets;
+      return hasRules || hasCommands || hasSkills || hasPresets;
     });
 
     if (packages.length === 0) {
@@ -283,6 +361,7 @@ export async function installWorkspaces(
         installedCommandCount: 0,
         installedAssetCount: 0,
         installedHookCount: 0,
+        installedSkillCount: 0,
         packagesCount: 0,
       };
     }
@@ -328,6 +407,23 @@ export async function installWorkspaces(
       writeAssetsToTargets(allAssets, workspaceCommandTargets);
 
       writeCommandsToTargets(dedupedWorkspaceCommands, workspaceCommandTargets);
+    }
+
+    // Merge and write skills for workspace
+    const workspaceSkills = mergeWorkspaceSkills(packages);
+    const workspaceSkillTargets = collectWorkspaceSkillTargets(packages);
+
+    if (workspaceSkills.length > 0) {
+      warnPresetSkillCollisions(workspaceSkills);
+    }
+
+    if (
+      !dryRun &&
+      workspaceSkills.length > 0 &&
+      workspaceSkillTargets.length > 0
+    ) {
+      const dedupedWorkspaceSkills = dedupeSkillsForInstall(workspaceSkills);
+      writeSkillsToTargets(dedupedWorkspaceSkills, workspaceSkillTargets);
     }
 
     const { merged: rootMcp, conflicts } = mergeWorkspaceMcpServers(packages);
@@ -378,6 +474,14 @@ export async function installWorkspaces(
             );
           }
 
+          if (pkg.installedSkillCount > 0) {
+            summaryParts.push(
+              `${pkg.installedSkillCount} skill${
+                pkg.installedSkillCount === 1 ? "" : "s"
+              }`,
+            );
+          }
+
           console.log(
             chalk.green(`✅ ${pkg.path} (${summaryParts.join(", ")})`),
           );
@@ -404,6 +508,12 @@ export async function installWorkspaces(
                 result.totalHookCount === 1 ? "" : "s"
               } total`
             : "";
+        const skillSummary =
+          result.totalSkillCount > 0
+            ? `, ${result.totalSkillCount} skill${
+                result.totalSkillCount === 1 ? "" : "s"
+              } total`
+            : "";
 
         console.log(
           chalk.green(
@@ -411,7 +521,7 @@ export async function installWorkspaces(
               result.packages.length - failedPackages.length
             }/${result.packages.length} packages (${result.totalRuleCount} rule${
               result.totalRuleCount === 1 ? "" : "s"
-            } total${commandSummary}${hookSummary})`,
+            } total${commandSummary}${hookSummary}${skillSummary})`,
           ),
         );
         console.log(
@@ -434,6 +544,7 @@ export async function installWorkspaces(
         installedCommandCount: result.totalCommandCount,
         installedAssetCount: result.totalAssetCount,
         installedHookCount: result.totalHookCount,
+        installedSkillCount: result.totalSkillCount,
         packagesCount: result.packages.length,
       };
     }
@@ -444,6 +555,7 @@ export async function installWorkspaces(
       installedCommandCount: result.totalCommandCount,
       installedAssetCount: result.totalAssetCount,
       installedHookCount: result.totalHookCount,
+      installedSkillCount: result.totalSkillCount,
       packagesCount: result.packages.length,
     };
   });

@@ -66,6 +66,13 @@ export type RuleFile = ManagedFile;
 
 export type CommandFile = ManagedFile;
 
+export interface SkillFile {
+  name: string; // skill directory name
+  sourcePath: string; // absolute path to source skill directory
+  source: "local" | "preset";
+  presetName?: string;
+}
+
 export interface RuleCollection {
   [target: string]: RuleFile[];
 }
@@ -75,6 +82,7 @@ export interface ResolvedConfig {
   rules: RuleFile[];
   commands: CommandFile[];
   assets: AssetFile[];
+  skills: SkillFile[];
   mcpServers: MCPServers;
   hooks: HooksJson;
   hookFiles: HookFile[];
@@ -188,6 +196,7 @@ export function validateConfig(
     const hasRules = fs.existsSync(path.join(rootPath, "rules"));
     const hasCommands = fs.existsSync(path.join(rootPath, "commands"));
     const hasHooks = fs.existsSync(path.join(rootPath, "hooks.json"));
+    const hasSkills = fs.existsSync(path.join(rootPath, "skills"));
 
     // In workspace mode, root config doesn't need these directories
     // since packages will have their own configurations
@@ -196,10 +205,11 @@ export function validateConfig(
       !hasRules &&
       !hasCommands &&
       !hasHooks &&
+      !hasSkills &&
       !hasPresets
     ) {
       throw new Error(
-        `Root directory must contain at least one of: rules/, commands/, hooks.json, or have presets configured`,
+        `Root directory must contain at least one of: rules/, commands/, skills/, hooks.json, or have presets configured`,
       );
     }
   } else if (!isWorkspaceMode && !hasPresets) {
@@ -343,6 +353,48 @@ export async function loadAssetsFromDirectory(
 }
 
 /**
+ * Load skills from a skills/ directory
+ * Each direct subdirectory containing a SKILL.md file is considered a skill
+ */
+export async function loadSkillsFromDirectory(
+  directoryPath: string,
+  source: "local" | "preset",
+  presetName?: string,
+): Promise<SkillFile[]> {
+  const skills: SkillFile[] = [];
+
+  if (!fs.existsSync(directoryPath)) {
+    return skills;
+  }
+
+  // Get all direct subdirectories
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const skillPath = path.join(directoryPath, entry.name);
+    const skillMdPath = path.join(skillPath, "SKILL.md");
+
+    // Only include directories that contain a SKILL.md file
+    if (!fs.existsSync(skillMdPath)) {
+      continue;
+    }
+
+    skills.push({
+      name: entry.name,
+      sourcePath: skillPath,
+      source,
+      presetName,
+    });
+  }
+
+  return skills;
+}
+
+/**
  * Extract namespace from preset path for directory structure
  * Handles both npm packages and local paths consistently
  */
@@ -422,10 +474,11 @@ export async function loadPreset(
   const hasCommands = fs.existsSync(path.join(presetRootDir, "commands"));
   const hasHooks = fs.existsSync(path.join(presetRootDir, "hooks.json"));
   const hasAssets = fs.existsSync(path.join(presetRootDir, "assets"));
+  const hasSkills = fs.existsSync(path.join(presetRootDir, "skills"));
 
-  if (!hasRules && !hasCommands && !hasHooks && !hasAssets) {
+  if (!hasRules && !hasCommands && !hasHooks && !hasAssets && !hasSkills) {
     throw new Error(
-      `Preset "${presetPath}" must have at least one of: rules/, commands/, hooks.json, or assets/`,
+      `Preset "${presetPath}" must have at least one of: rules/, commands/, skills/, hooks.json, or assets/`,
     );
   }
 
@@ -442,6 +495,7 @@ export async function loadAllRules(
   rules: RuleFile[];
   commands: CommandFile[];
   assets: AssetFile[];
+  skills: SkillFile[];
   mcpServers: MCPServers;
   hooks: HooksJson;
   hookFiles: HookFile[];
@@ -449,6 +503,7 @@ export async function loadAllRules(
   const allRules: RuleFile[] = [];
   const allCommands: CommandFile[] = [];
   const allAssets: AssetFile[] = [];
+  const allSkills: SkillFile[] = [];
   const allHookFiles: HookFile[] = [];
   const allHooksConfigs: HooksJson[] = [];
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
@@ -488,6 +543,13 @@ export async function loadAllRules(
     if (fs.existsSync(assetsPath)) {
       const localAssets = await loadAssetsFromDirectory(assetsPath, "local");
       allAssets.push(...localAssets);
+    }
+
+    // Load skills from skills/ subdirectory
+    const skillsPath = path.join(rootPath, "skills");
+    if (fs.existsSync(skillsPath)) {
+      const localSkills = await loadSkillsFromDirectory(skillsPath, "local");
+      allSkills.push(...localSkills);
     }
   }
 
@@ -539,6 +601,17 @@ export async function loadAllRules(
         allAssets.push(...presetAssets);
       }
 
+      // Load preset skills from skills/ subdirectory
+      const presetSkillsPath = path.join(presetRootDir, "skills");
+      if (fs.existsSync(presetSkillsPath)) {
+        const presetSkills = await loadSkillsFromDirectory(
+          presetSkillsPath,
+          "preset",
+          presetPath,
+        );
+        allSkills.push(...presetSkills);
+      }
+
       // Merge MCP servers from preset
       if (preset.config.mcpServers) {
         mergedMcpServers = mergePresetMcpServers(
@@ -556,6 +629,7 @@ export async function loadAllRules(
     rules: allRules,
     commands: allCommands,
     assets: allAssets,
+    skills: allSkills,
     mcpServers: mergedMcpServers,
     hooks: mergedHooks,
     hookFiles: allHookFiles,
@@ -647,7 +721,7 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
 
   const configWithDefaults = applyDefaults(config, isWorkspaces);
 
-  const { rules, commands, assets, mcpServers, hooks, hookFiles } =
+  const { rules, commands, assets, skills, mcpServers, hooks, hookFiles } =
     await loadAllRules(configWithDefaults, workingDir);
 
   return {
@@ -655,6 +729,7 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
     rules,
     commands,
     assets,
+    skills,
     mcpServers,
     hooks,
     hookFiles,

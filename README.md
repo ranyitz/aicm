@@ -16,6 +16,7 @@ A CLI tool for managing Agentic configurations across projects.
 - [Features](#features)
   - [Rules](#rules)
   - [Commands](#commands)
+  - [Skills](#skills)
   - [Hooks](#hooks)
   - [MCP Servers](#mcp-servers)
   - [Assets](#assets)
@@ -86,6 +87,7 @@ After installation, open Cursor and ask it to do something. Your AI assistant wi
 │   ├── typescript.mdc
 │   └── react.mdc
 ├── commands/        # Command files (.md) [optional]
+├── skills/          # Agent Skills [optional]
 ├── assets/          # Auxiliary files [optional]
 └── hooks.json       # Hook configuration [optional]
 ```
@@ -140,7 +142,7 @@ The rules are now installed in `.cursor/rules/aicm/` and any MCP servers are con
 ### Notes
 
 - Generated files are always placed in subdirectories for deterministic cleanup and easy gitignore.
-- Users should add `.cursor/*/aicm/` to `.gitignore` to avoid tracking generated files. This single pattern covers all aicm-managed directories (rules, commands, assets, hooks).
+- Users should add `.cursor/*/aicm/`, `.cursor/skills/`, `.claude/`, and `.codex/` to `.gitignore` to avoid tracking generated files.
 
 ## Features
 
@@ -193,6 +195,65 @@ Configure your `aicm.json`:
 ```
 
 Command files ending in `.md` are installed to `.cursor/commands/aicm/` and appear in Cursor under the `/` command menu.
+
+### Skills
+
+aicm supports [Agent Skills](https://agentskills.io) - a standard format for giving AI agents new capabilities and expertise. Skills are folders containing instructions, scripts, and resources that agents can discover and use.
+
+Create a `skills/` directory where each subdirectory is a skill (containing a `SKILL.md` file):
+
+```
+my-project/
+├── aicm.json
+└── skills/
+    ├── pdf-processing/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   │   └── extract.py
+    │   └── references/
+    │       └── REFERENCE.md
+    └── code-review/
+        └── SKILL.md
+```
+
+Each skill must have a `SKILL.md` file with YAML frontmatter:
+
+```markdown
+---
+name: pdf-processing
+description: Extract text and tables from PDF files, fill forms, merge documents.
+---
+
+# PDF Processing Skill
+
+This skill enables working with PDF documents.
+
+## Usage
+
+Run the extraction script:
+scripts/extract.py
+```
+
+Configure your `aicm.json`:
+
+```json
+{
+  "rootDir": "./",
+  "targets": ["cursor"]
+}
+```
+
+Skills are installed to different locations based on the target:
+
+| Target     | Skills Location   |
+| ---------- | ----------------- |
+| **Cursor** | `.cursor/skills/` |
+| **Claude** | `.claude/skills/` |
+| **Codex**  | `.codex/skills/`  |
+
+When installed, each skill directory is copied in its entirety (including `scripts/`, `references/`, `assets/` subdirectories). A `.aicm.json` file is added inside each installed skill to track that it's managed by aicm.
+
+In workspace mode, skills are installed both to each package and merged at the root level, similar to commands.
 
 ### Hooks
 
@@ -370,9 +431,10 @@ aicm automatically detects workspaces if your `package.json` contains a `workspa
 ### How It Works
 
 1. **Discover packages**: Automatically find all directories containing `aicm.json` files in your repository.
-2. **Install per package**: Install rules and MCPs for each package individually in their respective directories.
+2. **Install per package**: Install rules, commands, and skills for each package individually in their respective directories.
 3. **Merge MCP servers**: Write a merged `.cursor/mcp.json` at the repository root containing all MCP servers from every package.
 4. **Merge commands**: Write a merged `.cursor/commands/aicm/` at the repository root containing all commands from every package.
+5. **Merge skills**: Write merged skills to the repository root (e.g., `.cursor/skills/`) containing all skills from every package.
 
 For example, in a workspace structure like:
 
@@ -430,7 +492,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 
 ### Configuration Options
 
-- **rootDir**: Directory containing your aicm structure. Must contain one or more of: `rules/`, `commands/`, `assets/`, `hooks/`, or `hooks.json`. If not specified, aicm will only install rules from presets and will not pick up any local directories.
+- **rootDir**: Directory containing your aicm structure. Must contain one or more of: `rules/`, `commands/`, `skills/`, `assets/`, `hooks/`, or `hooks.json`. If not specified, aicm will only install rules from presets and will not pick up any local directories.
 - **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`. Supported targets: `cursor`, `windsurf`, `codex`, `claude`.
 - **presets**: List of preset packages or paths to include.
 - **mcpServers**: MCP server configurations.
@@ -472,11 +534,14 @@ aicm uses a convention-based directory structure:
 ```
 my-project/
 ├── aicm.json
-├── rules/           # Rule files (.mdc) [required for rules]
+├── rules/           # Rule files (.mdc) [optional]
 │   ├── api.mdc
 │   └── testing.mdc
 ├── commands/        # Command files (.md) [optional]
 │   └── generate.md
+├── skills/          # Agent Skills [optional]
+│   └── my-skill/
+│       └── SKILL.md
 ├── assets/          # Auxiliary files [optional]
 │   ├── schema.json
 │   └── examples/
