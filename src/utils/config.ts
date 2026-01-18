@@ -73,6 +73,8 @@ export interface SkillFile {
   presetName?: string;
 }
 
+export type AgentFile = ManagedFile;
+
 export interface RuleCollection {
   [target: string]: RuleFile[];
 }
@@ -83,6 +85,7 @@ export interface ResolvedConfig {
   commands: CommandFile[];
   assets: AssetFile[];
   skills: SkillFile[];
+  agents: AgentFile[];
   mcpServers: MCPServers;
   hooks: HooksJson;
   hookFiles: HookFile[];
@@ -197,6 +200,7 @@ export function validateConfig(
     const hasCommands = fs.existsSync(path.join(rootPath, "commands"));
     const hasHooks = fs.existsSync(path.join(rootPath, "hooks.json"));
     const hasSkills = fs.existsSync(path.join(rootPath, "skills"));
+    const hasAgents = fs.existsSync(path.join(rootPath, "agents"));
 
     // In workspace mode, root config doesn't need these directories
     // since packages will have their own configurations
@@ -206,10 +210,11 @@ export function validateConfig(
       !hasCommands &&
       !hasHooks &&
       !hasSkills &&
+      !hasAgents &&
       !hasPresets
     ) {
       throw new Error(
-        `Root directory must contain at least one of: rules/, commands/, skills/, hooks.json, or have presets configured`,
+        `Root directory must contain at least one of: rules/, commands/, skills/, agents/, hooks.json, or have presets configured`,
       );
     }
   } else if (!isWorkspaceMode && !hasPresets) {
@@ -395,6 +400,46 @@ export async function loadSkillsFromDirectory(
 }
 
 /**
+ * Load agents from an agents/ directory
+ * Agents are markdown files (.md) with YAML frontmatter
+ */
+export async function loadAgentsFromDirectory(
+  directoryPath: string,
+  source: "local" | "preset",
+  presetName?: string,
+): Promise<AgentFile[]> {
+  const agents: AgentFile[] = [];
+
+  if (!fs.existsSync(directoryPath)) {
+    return agents;
+  }
+
+  const pattern = path.join(directoryPath, "**/*.md").replace(/\\/g, "/");
+  const filePaths = await fg(pattern, {
+    onlyFiles: true,
+    absolute: true,
+  });
+
+  filePaths.sort();
+
+  for (const filePath of filePaths) {
+    const content = await fs.readFile(filePath, "utf8");
+    const relativePath = path.relative(directoryPath, filePath);
+    const agentName = relativePath.replace(/\.md$/, "").replace(/\\/g, "/");
+
+    agents.push({
+      name: agentName,
+      content,
+      sourcePath: filePath,
+      source,
+      presetName,
+    });
+  }
+
+  return agents;
+}
+
+/**
  * Extract namespace from preset path for directory structure
  * Handles both npm packages and local paths consistently
  */
@@ -475,10 +520,18 @@ export async function loadPreset(
   const hasHooks = fs.existsSync(path.join(presetRootDir, "hooks.json"));
   const hasAssets = fs.existsSync(path.join(presetRootDir, "assets"));
   const hasSkills = fs.existsSync(path.join(presetRootDir, "skills"));
+  const hasAgents = fs.existsSync(path.join(presetRootDir, "agents"));
 
-  if (!hasRules && !hasCommands && !hasHooks && !hasAssets && !hasSkills) {
+  if (
+    !hasRules &&
+    !hasCommands &&
+    !hasHooks &&
+    !hasAssets &&
+    !hasSkills &&
+    !hasAgents
+  ) {
     throw new Error(
-      `Preset "${presetPath}" must have at least one of: rules/, commands/, skills/, hooks.json, or assets/`,
+      `Preset "${presetPath}" must have at least one of: rules/, commands/, skills/, agents/, hooks.json, or assets/`,
     );
   }
 
@@ -496,6 +549,7 @@ export async function loadAllRules(
   commands: CommandFile[];
   assets: AssetFile[];
   skills: SkillFile[];
+  agents: AgentFile[];
   mcpServers: MCPServers;
   hooks: HooksJson;
   hookFiles: HookFile[];
@@ -504,6 +558,7 @@ export async function loadAllRules(
   const allCommands: CommandFile[] = [];
   const allAssets: AssetFile[] = [];
   const allSkills: SkillFile[] = [];
+  const allAgents: AgentFile[] = [];
   const allHookFiles: HookFile[] = [];
   const allHooksConfigs: HooksJson[] = [];
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
@@ -550,6 +605,13 @@ export async function loadAllRules(
     if (fs.existsSync(skillsPath)) {
       const localSkills = await loadSkillsFromDirectory(skillsPath, "local");
       allSkills.push(...localSkills);
+    }
+
+    // Load agents from agents/ subdirectory
+    const agentsPath = path.join(rootPath, "agents");
+    if (fs.existsSync(agentsPath)) {
+      const localAgents = await loadAgentsFromDirectory(agentsPath, "local");
+      allAgents.push(...localAgents);
     }
   }
 
@@ -612,6 +674,17 @@ export async function loadAllRules(
         allSkills.push(...presetSkills);
       }
 
+      // Load preset agents from agents/ subdirectory
+      const presetAgentsPath = path.join(presetRootDir, "agents");
+      if (fs.existsSync(presetAgentsPath)) {
+        const presetAgents = await loadAgentsFromDirectory(
+          presetAgentsPath,
+          "preset",
+          presetPath,
+        );
+        allAgents.push(...presetAgents);
+      }
+
       // Merge MCP servers from preset
       if (preset.config.mcpServers) {
         mergedMcpServers = mergePresetMcpServers(
@@ -630,6 +703,7 @@ export async function loadAllRules(
     commands: allCommands,
     assets: allAssets,
     skills: allSkills,
+    agents: allAgents,
     mcpServers: mergedMcpServers,
     hooks: mergedHooks,
     hookFiles: allHookFiles,
@@ -721,8 +795,16 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
 
   const configWithDefaults = applyDefaults(config, isWorkspaces);
 
-  const { rules, commands, assets, skills, mcpServers, hooks, hookFiles } =
-    await loadAllRules(configWithDefaults, workingDir);
+  const {
+    rules,
+    commands,
+    assets,
+    skills,
+    agents,
+    mcpServers,
+    hooks,
+    hookFiles,
+  } = await loadAllRules(configWithDefaults, workingDir);
 
   return {
     config: configWithDefaults,
@@ -730,6 +812,7 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
     commands,
     assets,
     skills,
+    agents,
     mcpServers,
     hooks,
     hookFiles,
