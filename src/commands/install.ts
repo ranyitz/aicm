@@ -9,6 +9,7 @@ import {
   CommandFile,
   AssetFile,
   SkillFile,
+  AgentFile,
   MCPServers,
   SupportedTarget,
   detectWorkspacesFromPackageJson,
@@ -83,6 +84,10 @@ export interface InstallResult {
    * Number of skills installed
    */
   installedSkillCount: number;
+  /**
+   * Number of agents installed
+   */
+  installedAgentCount: number;
   /**
    * Number of packages installed
    */
@@ -495,6 +500,109 @@ export function dedupeSkillsForInstall(skills: SkillFile[]): SkillFile[] {
   return Array.from(unique.values());
 }
 
+/**
+ * Get the agents installation path for a target
+ * Returns null for targets that don't support agents
+ */
+function getAgentsTargetPath(target: SupportedTarget): string | null {
+  const projectDir = process.cwd();
+
+  switch (target) {
+    case "cursor":
+      return path.join(projectDir, ".cursor", "agents", "aicm");
+    case "claude":
+      return path.join(projectDir, ".claude", "agents", "aicm");
+    case "codex":
+    case "windsurf":
+      // Codex and Windsurf do not support agents
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Write agents to all supported target directories
+ */
+export function writeAgentsToTargets(
+  agents: AgentFile[],
+  targets: SupportedTarget[],
+): void {
+  if (agents.length === 0) return;
+
+  for (const target of targets) {
+    const targetAgentsDir = getAgentsTargetPath(target);
+
+    if (!targetAgentsDir) {
+      // Target doesn't support agents
+      continue;
+    }
+
+    // Clean and recreate the aicm agents directory
+    fs.removeSync(targetAgentsDir);
+    fs.ensureDirSync(targetAgentsDir);
+
+    for (const agent of agents) {
+      const agentNameParts = agent.name
+        .replace(/\\/g, "/")
+        .split("/")
+        .filter(Boolean);
+      const agentPath = path.join(targetAgentsDir, ...agentNameParts);
+      const agentFile = agentPath + ".md";
+
+      fs.ensureDirSync(path.dirname(agentFile));
+      fs.writeFileSync(agentFile, agent.content);
+    }
+  }
+}
+
+/**
+ * Warn about agent name collisions from different presets
+ */
+export function warnPresetAgentCollisions(agents: AgentFile[]): void {
+  const collisions = new Map<
+    string,
+    { presets: Set<string>; lastPreset: string }
+  >();
+
+  for (const agent of agents) {
+    if (!agent.presetName) continue;
+
+    const entry = collisions.get(agent.name);
+    if (entry) {
+      entry.presets.add(agent.presetName);
+      entry.lastPreset = agent.presetName;
+    } else {
+      collisions.set(agent.name, {
+        presets: new Set([agent.presetName]),
+        lastPreset: agent.presetName,
+      });
+    }
+  }
+
+  for (const [agentName, { presets, lastPreset }] of collisions) {
+    if (presets.size > 1) {
+      const presetList = Array.from(presets).sort().join(", ");
+      console.warn(
+        chalk.yellow(
+          `Warning: multiple presets provide the "${agentName}" agent (${presetList}). Using definition from ${lastPreset}.`,
+        ),
+      );
+    }
+  }
+}
+
+/**
+ * Dedupe agents by name (last one wins)
+ */
+export function dedupeAgentsForInstall(agents: AgentFile[]): AgentFile[] {
+  const unique = new Map<string, AgentFile>();
+  for (const agent of agents) {
+    unique.set(agent.name, agent);
+  }
+  return Array.from(unique.values());
+}
+
 export function warnPresetCommandCollisions(commands: CommandFile[]): void {
   const collisions = new Map<
     string,
@@ -658,6 +766,7 @@ export async function installPackage(
         installedAssetCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
+        installedAgentCount: 0,
         packagesCount: 0,
       };
     }
@@ -668,6 +777,7 @@ export async function installPackage(
       commands,
       assets,
       skills,
+      agents,
       mcpServers,
       hooks,
       hookFiles,
@@ -681,6 +791,7 @@ export async function installPackage(
         installedAssetCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
+        installedAgentCount: 0,
         packagesCount: 0,
       };
     }
@@ -690,6 +801,9 @@ export async function installPackage(
 
     warnPresetSkillCollisions(skills);
     const skillsToInstall = dedupeSkillsForInstall(skills);
+
+    warnPresetAgentCollisions(agents);
+    const agentsToInstall = dedupeAgentsForInstall(agents);
 
     try {
       if (!options.dryRun) {
@@ -702,6 +816,11 @@ export async function installPackage(
 
         writeSkillsToTargets(
           skillsToInstall,
+          config.targets as SupportedTarget[],
+        );
+
+        writeAgentsToTargets(
+          agentsToInstall,
           config.targets as SupportedTarget[],
         );
 
@@ -729,6 +848,7 @@ export async function installPackage(
       ).size;
       const uniqueHookCount = countHooks(hooks);
       const uniqueSkillCount = skillsToInstall.length;
+      const uniqueAgentCount = agentsToInstall.length;
 
       return {
         success: true,
@@ -737,6 +857,7 @@ export async function installPackage(
         installedAssetCount: assets.length,
         installedHookCount: uniqueHookCount,
         installedSkillCount: uniqueSkillCount,
+        installedAgentCount: uniqueAgentCount,
         packagesCount: 1,
       };
     } catch (error) {
@@ -748,6 +869,7 @@ export async function installPackage(
         installedAssetCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
+        installedAgentCount: 0,
         packagesCount: 0,
       };
     }
@@ -774,6 +896,7 @@ export async function install(
       installedAssetCount: 0,
       installedHookCount: 0,
       installedSkillCount: 0,
+      installedAgentCount: 0,
       packagesCount: 0,
     };
   }
@@ -821,6 +944,7 @@ export async function installCommand(
     const commandCount = result.installedCommandCount;
     const hookCount = result.installedHookCount;
     const skillCount = result.installedSkillCount;
+    const agentCount = result.installedAgentCount;
     const ruleMessage =
       ruleCount > 0 ? `${ruleCount} rule${ruleCount === 1 ? "" : "s"}` : null;
     const commandMessage =
@@ -832,6 +956,10 @@ export async function installCommand(
     const skillMessage =
       skillCount > 0
         ? `${skillCount} skill${skillCount === 1 ? "" : "s"}`
+        : null;
+    const agentMessage =
+      agentCount > 0
+        ? `${agentCount} agent${agentCount === 1 ? "" : "s"}`
         : null;
     const countsParts: string[] = [];
     if (ruleMessage) {
@@ -845,6 +973,9 @@ export async function installCommand(
     }
     if (skillMessage) {
       countsParts.push(skillMessage);
+    }
+    if (agentMessage) {
+      countsParts.push(agentMessage);
     }
     const countsMessage =
       countsParts.length > 0
@@ -863,9 +994,10 @@ export async function installCommand(
       ruleCount === 0 &&
       commandCount === 0 &&
       hookCount === 0 &&
-      skillCount === 0
+      skillCount === 0 &&
+      agentCount === 0
     ) {
-      console.log("No rules, commands, hooks, or skills installed");
+      console.log("No rules, commands, hooks, skills, or agents installed");
     } else if (result.packagesCount > 1) {
       console.log(
         `Successfully installed ${countsMessage} across ${result.packagesCount} packages`,

@@ -237,6 +237,50 @@ function cleanSkills(cwd: string, verbose: boolean): number {
   return cleanedCount;
 }
 
+/**
+ * Clean aicm-managed agents from agents directories
+ * Removes the aicm/ subdirectory within each target's agents directory
+ */
+function cleanAgents(cwd: string, verbose: boolean): number {
+  let cleanedCount = 0;
+
+  // Agents directories for each target (aicm subdirectory)
+  const agentsDirs = [
+    path.join(cwd, ".cursor", "agents", "aicm"),
+    path.join(cwd, ".claude", "agents", "aicm"),
+  ];
+
+  for (const agentsDir of agentsDirs) {
+    if (fs.existsSync(agentsDir)) {
+      try {
+        fs.removeSync(agentsDir);
+        if (verbose) {
+          console.log(chalk.gray(`  Removed ${agentsDir}`));
+        }
+        cleanedCount++;
+
+        // Check if parent agents directory is now empty
+        const parentDir = path.dirname(agentsDir);
+        if (fs.existsSync(parentDir)) {
+          const remainingEntries = fs.readdirSync(parentDir);
+          if (remainingEntries.length === 0) {
+            fs.removeSync(parentDir);
+            if (verbose) {
+              console.log(chalk.gray(`  Removed empty directory ${parentDir}`));
+            }
+          }
+        }
+      } catch {
+        console.warn(
+          chalk.yellow(`Warning: Failed to clean agents in ${agentsDir}`),
+        );
+      }
+    }
+  }
+
+  return cleanedCount;
+}
+
 function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
   let cleanedCount = 0;
 
@@ -246,8 +290,10 @@ function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
     path.join(cwd, ".cursor", "assets"),
     path.join(cwd, ".cursor", "hooks"),
     path.join(cwd, ".cursor", "skills"),
+    path.join(cwd, ".cursor", "agents"),
     path.join(cwd, ".cursor"),
     path.join(cwd, ".claude", "skills"),
+    path.join(cwd, ".claude", "agents"),
     path.join(cwd, ".claude"),
     path.join(cwd, ".codex", "skills"),
     path.join(cwd, ".codex"),
@@ -312,6 +358,9 @@ export async function cleanPackage(
 
     // Clean skills
     cleanedCount += cleanSkills(cwd, verbose);
+
+    // Clean agents
+    cleanedCount += cleanAgents(cwd, verbose);
 
     // Clean empty directories
     cleanedCount += cleanEmptyDirectories(cwd, verbose);

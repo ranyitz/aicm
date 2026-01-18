@@ -191,7 +191,9 @@ describe("hooks installation", () => {
     const { stdout } = await runCommand("install --ci");
 
     // Should succeed but install 0 hooks
-    expect(stdout).toContain("No rules, commands, hooks, or skills installed");
+    expect(stdout).toContain(
+      "No rules, commands, hooks, skills, or agents installed",
+    );
   });
 
   test("validates hooks file exists", async () => {

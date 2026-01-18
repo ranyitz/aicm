@@ -4,6 +4,7 @@ import {
   ResolvedConfig,
   CommandFile,
   SkillFile,
+  AgentFile,
   MCPServers,
   SupportedTarget,
 } from "../utils/config";
@@ -23,10 +24,13 @@ import {
   writeCommandsToTargets,
   writeAssetsToTargets,
   writeSkillsToTargets,
+  writeAgentsToTargets,
   warnPresetCommandCollisions,
   warnPresetSkillCollisions,
+  warnPresetAgentCollisions,
   dedupeCommandsForInstall,
   dedupeSkillsForInstall,
+  dedupeAgentsForInstall,
   writeMcpServersToFile,
 } from "./install";
 
@@ -143,6 +147,70 @@ function collectWorkspaceSkillTargets(
   return Array.from(targets);
 }
 
+/**
+ * Merge agents from multiple workspace packages
+ * Agents are merged flat (not namespaced by preset)
+ * Dedupes preset agents that appear in multiple packages
+ */
+function mergeWorkspaceAgents(
+  packages: Array<{
+    relativePath: string;
+    config: ResolvedConfig;
+  }>,
+): AgentFile[] {
+  const agents: AgentFile[] = [];
+  const seenPresetAgents = new Set<string>();
+
+  for (const pkg of packages) {
+    // Agents are supported by cursor and claude targets
+    const hasAgentsTarget =
+      pkg.config.config.targets.includes("cursor") ||
+      pkg.config.config.targets.includes("claude");
+
+    if (!hasAgentsTarget) {
+      continue;
+    }
+
+    for (const agent of pkg.config.agents ?? []) {
+      if (agent.presetName) {
+        // Dedupe preset agents by preset+name combination
+        const presetKey = `${agent.presetName}::${agent.name}`;
+        if (seenPresetAgents.has(presetKey)) {
+          continue;
+        }
+        seenPresetAgents.add(presetKey);
+      }
+
+      agents.push(agent);
+    }
+  }
+
+  return agents;
+}
+
+/**
+ * Collect all targets that support agents from workspace packages
+ */
+function collectWorkspaceAgentTargets(
+  packages: Array<{
+    relativePath: string;
+    config: ResolvedConfig;
+  }>,
+): SupportedTarget[] {
+  const targets = new Set<SupportedTarget>();
+
+  for (const pkg of packages) {
+    for (const target of pkg.config.config.targets) {
+      // Agents are supported by cursor and claude
+      if (target === "cursor" || target === "claude") {
+        targets.add(target as SupportedTarget);
+      }
+    }
+  }
+
+  return Array.from(targets);
+}
+
 interface MergeConflict {
   key: string;
   packages: string[];
@@ -243,12 +311,14 @@ async function installWorkspacesPackages(
     installedAssetCount: number;
     installedHookCount: number;
     installedSkillCount: number;
+    installedAgentCount: number;
   }>;
   totalRuleCount: number;
   totalCommandCount: number;
   totalAssetCount: number;
   totalHookCount: number;
   totalSkillCount: number;
+  totalAgentCount: number;
 }> {
   const results: Array<{
     path: string;
@@ -259,12 +329,14 @@ async function installWorkspacesPackages(
     installedAssetCount: number;
     installedHookCount: number;
     installedSkillCount: number;
+    installedAgentCount: number;
   }> = [];
   let totalRuleCount = 0;
   let totalCommandCount = 0;
   let totalAssetCount = 0;
   let totalHookCount = 0;
   let totalSkillCount = 0;
+  let totalAgentCount = 0;
 
   // Install packages sequentially for now (can be parallelized later)
   for (const pkg of packages) {
@@ -282,6 +354,7 @@ async function installWorkspacesPackages(
       totalAssetCount += result.installedAssetCount;
       totalHookCount += result.installedHookCount;
       totalSkillCount += result.installedSkillCount;
+      totalAgentCount += result.installedAgentCount;
 
       results.push({
         path: pkg.relativePath,
@@ -292,6 +365,7 @@ async function installWorkspacesPackages(
         installedAssetCount: result.installedAssetCount,
         installedHookCount: result.installedHookCount,
         installedSkillCount: result.installedSkillCount,
+        installedAgentCount: result.installedAgentCount,
       });
     } catch (error) {
       results.push({
@@ -303,6 +377,7 @@ async function installWorkspacesPackages(
         installedAssetCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
+        installedAgentCount: 0,
       });
     }
   }
@@ -317,6 +392,7 @@ async function installWorkspacesPackages(
     totalAssetCount,
     totalHookCount,
     totalSkillCount,
+    totalAgentCount,
   };
 }
 
@@ -344,13 +420,14 @@ export async function installWorkspaces(
       const isRoot = pkg.relativePath === ".";
       if (!isRoot) return true;
 
-      // For root directories, only keep if it has rules, commands, skills, or presets
+      // For root directories, only keep if it has rules, commands, skills, agents, or presets
       const hasRules = pkg.config.rules && pkg.config.rules.length > 0;
       const hasCommands = pkg.config.commands && pkg.config.commands.length > 0;
       const hasSkills = pkg.config.skills && pkg.config.skills.length > 0;
+      const hasAgents = pkg.config.agents && pkg.config.agents.length > 0;
       const hasPresets =
         pkg.config.config.presets && pkg.config.config.presets.length > 0;
-      return hasRules || hasCommands || hasSkills || hasPresets;
+      return hasRules || hasCommands || hasSkills || hasAgents || hasPresets;
     });
 
     if (packages.length === 0) {
@@ -362,6 +439,7 @@ export async function installWorkspaces(
         installedAssetCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
+        installedAgentCount: 0,
         packagesCount: 0,
       };
     }
@@ -426,6 +504,23 @@ export async function installWorkspaces(
       writeSkillsToTargets(dedupedWorkspaceSkills, workspaceSkillTargets);
     }
 
+    // Merge and write agents for workspace
+    const workspaceAgents = mergeWorkspaceAgents(packages);
+    const workspaceAgentTargets = collectWorkspaceAgentTargets(packages);
+
+    if (workspaceAgents.length > 0) {
+      warnPresetAgentCollisions(workspaceAgents);
+    }
+
+    if (
+      !dryRun &&
+      workspaceAgents.length > 0 &&
+      workspaceAgentTargets.length > 0
+    ) {
+      const dedupedWorkspaceAgents = dedupeAgentsForInstall(workspaceAgents);
+      writeAgentsToTargets(dedupedWorkspaceAgents, workspaceAgentTargets);
+    }
+
     const { merged: rootMcp, conflicts } = mergeWorkspaceMcpServers(packages);
 
     const hasCursorTarget = packages.some((p) =>
@@ -482,6 +577,14 @@ export async function installWorkspaces(
             );
           }
 
+          if (pkg.installedAgentCount > 0) {
+            summaryParts.push(
+              `${pkg.installedAgentCount} agent${
+                pkg.installedAgentCount === 1 ? "" : "s"
+              }`,
+            );
+          }
+
           console.log(
             chalk.green(`✅ ${pkg.path} (${summaryParts.join(", ")})`),
           );
@@ -514,6 +617,12 @@ export async function installWorkspaces(
                 result.totalSkillCount === 1 ? "" : "s"
               } total`
             : "";
+        const agentSummary =
+          result.totalAgentCount > 0
+            ? `, ${result.totalAgentCount} agent${
+                result.totalAgentCount === 1 ? "" : "s"
+              } total`
+            : "";
 
         console.log(
           chalk.green(
@@ -521,7 +630,7 @@ export async function installWorkspaces(
               result.packages.length - failedPackages.length
             }/${result.packages.length} packages (${result.totalRuleCount} rule${
               result.totalRuleCount === 1 ? "" : "s"
-            } total${commandSummary}${hookSummary}${skillSummary})`,
+            } total${commandSummary}${hookSummary}${skillSummary}${agentSummary})`,
           ),
         );
         console.log(
@@ -545,6 +654,7 @@ export async function installWorkspaces(
         installedAssetCount: result.totalAssetCount,
         installedHookCount: result.totalHookCount,
         installedSkillCount: result.totalSkillCount,
+        installedAgentCount: result.totalAgentCount,
         packagesCount: result.packages.length,
       };
     }
@@ -556,6 +666,7 @@ export async function installWorkspaces(
       installedAssetCount: result.totalAssetCount,
       installedHookCount: result.totalHookCount,
       installedSkillCount: result.totalSkillCount,
+      installedAgentCount: result.totalAgentCount,
       packagesCount: result.packages.length,
     };
   });
