@@ -309,10 +309,12 @@ Configure your `aicm.json`:
 
 Agents are installed to different locations based on the target:
 
-| Target     | Agents Location        |
-| ---------- | ---------------------- |
-| **Cursor** | `.cursor/agents/aicm/` |
-| **Claude** | `.claude/agents/aicm/` |
+| Target     | Agents Location   |
+| ---------- | ----------------- |
+| **Cursor** | `.cursor/agents/` |
+| **Claude** | `.claude/agents/` |
+
+A `.aicm.json` metadata file is created in the agents directory to track which agents are managed by aicm. This allows the clean command to remove only aicm-managed agents while preserving any manually created agents.
 
 **Supported Configuration Fields:**
 
@@ -506,7 +508,7 @@ aicm automatically detects workspaces if your `package.json` contains a `workspa
 3. **Merge MCP servers**: Write a merged `.cursor/mcp.json` at the repository root containing all MCP servers from every package.
 4. **Merge commands**: Write a merged `.cursor/commands/aicm/` at the repository root containing all commands from every package.
 5. **Merge skills**: Write merged skills to the repository root (e.g., `.cursor/skills/`) containing all skills from every package.
-6. **Merge agents**: Write merged agents to the repository root (e.g., `.cursor/agents/aicm/`) containing all agents from every package.
+6. **Merge agents**: Write merged agents to the repository root (e.g., `.cursor/agents/`) containing all agents from every package.
 
 For example, in a workspace structure like:
 

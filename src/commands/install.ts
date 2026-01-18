@@ -509,9 +509,9 @@ function getAgentsTargetPath(target: SupportedTarget): string | null {
 
   switch (target) {
     case "cursor":
-      return path.join(projectDir, ".cursor", "agents", "aicm");
+      return path.join(projectDir, ".cursor", "agents");
     case "claude":
-      return path.join(projectDir, ".claude", "agents", "aicm");
+      return path.join(projectDir, ".claude", "agents");
     case "codex":
     case "windsurf":
       // Codex and Windsurf do not support agents
@@ -522,7 +522,16 @@ function getAgentsTargetPath(target: SupportedTarget): string | null {
 }
 
 /**
+ * Metadata file written to the agents directory to track aicm-managed agents
+ */
+interface AgentsAicmMetadata {
+  managedAgents: string[]; // List of agent file paths relative to agents directory
+}
+
+/**
  * Write agents to all supported target directories
+ * Similar to skills, agents are written directly to the agents directory
+ * with a .aicm.json metadata file tracking which agents are managed
  */
 export function writeAgentsToTargets(
   agents: AgentFile[],
@@ -538,21 +547,47 @@ export function writeAgentsToTargets(
       continue;
     }
 
-    // Clean and recreate the aicm agents directory
-    fs.removeSync(targetAgentsDir);
+    // Ensure the agents directory exists
     fs.ensureDirSync(targetAgentsDir);
+
+    // Read existing metadata to clean up old managed agents
+    const metadataPath = path.join(targetAgentsDir, ".aicm.json");
+    if (fs.existsSync(metadataPath)) {
+      try {
+        const existingMetadata: AgentsAicmMetadata =
+          fs.readJsonSync(metadataPath);
+        // Remove previously managed agents
+        for (const agentPath of existingMetadata.managedAgents || []) {
+          const fullPath = path.join(targetAgentsDir, agentPath);
+          if (fs.existsSync(fullPath)) {
+            fs.removeSync(fullPath);
+          }
+        }
+      } catch {
+        // Ignore errors reading metadata
+      }
+    }
+
+    const managedAgents: string[] = [];
 
     for (const agent of agents) {
       const agentNameParts = agent.name
         .replace(/\\/g, "/")
         .split("/")
         .filter(Boolean);
-      const agentPath = path.join(targetAgentsDir, ...agentNameParts);
-      const agentFile = agentPath + ".md";
+      const relativePath = agentNameParts.join("/") + ".md";
+      const agentFile = path.join(targetAgentsDir, ...agentNameParts) + ".md";
 
       fs.ensureDirSync(path.dirname(agentFile));
       fs.writeFileSync(agentFile, agent.content);
+      managedAgents.push(relativePath);
     }
+
+    // Write metadata file to track managed agents
+    const metadata: AgentsAicmMetadata = {
+      managedAgents,
+    };
+    fs.writeJsonSync(metadataPath, metadata, { spaces: 2 });
   }
 }
 

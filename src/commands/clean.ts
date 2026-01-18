@@ -238,43 +238,67 @@ function cleanSkills(cwd: string, verbose: boolean): number {
 }
 
 /**
+ * Metadata file structure for tracking aicm-managed agents
+ */
+interface AgentsAicmMetadata {
+  managedAgents: string[];
+}
+
+/**
  * Clean aicm-managed agents from agents directories
- * Removes the aicm/ subdirectory within each target's agents directory
+ * Only removes agents that are tracked in .aicm.json metadata file
  */
 function cleanAgents(cwd: string, verbose: boolean): number {
   let cleanedCount = 0;
 
-  // Agents directories for each target (aicm subdirectory)
+  // Agents directories for each target
   const agentsDirs = [
-    path.join(cwd, ".cursor", "agents", "aicm"),
-    path.join(cwd, ".claude", "agents", "aicm"),
+    path.join(cwd, ".cursor", "agents"),
+    path.join(cwd, ".claude", "agents"),
   ];
 
   for (const agentsDir of agentsDirs) {
-    if (fs.existsSync(agentsDir)) {
-      try {
-        fs.removeSync(agentsDir);
-        if (verbose) {
-          console.log(chalk.gray(`  Removed ${agentsDir}`));
-        }
-        cleanedCount++;
+    const metadataPath = path.join(agentsDir, ".aicm.json");
 
-        // Check if parent agents directory is now empty
-        const parentDir = path.dirname(agentsDir);
-        if (fs.existsSync(parentDir)) {
-          const remainingEntries = fs.readdirSync(parentDir);
-          if (remainingEntries.length === 0) {
-            fs.removeSync(parentDir);
-            if (verbose) {
-              console.log(chalk.gray(`  Removed empty directory ${parentDir}`));
-            }
+    if (!fs.existsSync(metadataPath)) {
+      continue;
+    }
+
+    try {
+      const metadata: AgentsAicmMetadata = fs.readJsonSync(metadataPath);
+
+      // Remove all managed agents
+      for (const agentPath of metadata.managedAgents || []) {
+        const fullPath = path.join(agentsDir, agentPath);
+        if (fs.existsSync(fullPath)) {
+          fs.removeSync(fullPath);
+          if (verbose) {
+            console.log(chalk.gray(`  Removed agent ${fullPath}`));
+          }
+          cleanedCount++;
+        }
+      }
+
+      // Remove the metadata file
+      fs.removeSync(metadataPath);
+      if (verbose) {
+        console.log(chalk.gray(`  Removed ${metadataPath}`));
+      }
+
+      // Remove the agents directory if it's now empty
+      if (fs.existsSync(agentsDir)) {
+        const remainingEntries = fs.readdirSync(agentsDir);
+        if (remainingEntries.length === 0) {
+          fs.removeSync(agentsDir);
+          if (verbose) {
+            console.log(chalk.gray(`  Removed empty directory ${agentsDir}`));
           }
         }
-      } catch {
-        console.warn(
-          chalk.yellow(`Warning: Failed to clean agents in ${agentsDir}`),
-        );
       }
+    } catch {
+      console.warn(
+        chalk.yellow(`Warning: Failed to clean agents in ${agentsDir}`),
+      );
     }
   }
 
