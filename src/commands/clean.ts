@@ -241,7 +241,7 @@ function cleanSkills(cwd: string, verbose: boolean): number {
  * Metadata file structure for tracking aicm-managed agents
  */
 interface AgentsAicmMetadata {
-  managedAgents: string[];
+  managedAgents: string[]; // List of agent names (without path or extension)
 }
 
 /**
@@ -267,9 +267,18 @@ function cleanAgents(cwd: string, verbose: boolean): number {
     try {
       const metadata: AgentsAicmMetadata = fs.readJsonSync(metadataPath);
 
-      // Remove all managed agents
-      for (const agentPath of metadata.managedAgents || []) {
-        const fullPath = path.join(agentsDir, agentPath);
+      // Remove all managed agents (names only)
+      for (const agentName of metadata.managedAgents || []) {
+        // Skip invalid names containing path separators (security check)
+        if (agentName.includes("/") || agentName.includes("\\")) {
+          console.warn(
+            chalk.yellow(
+              `Warning: Skipping invalid agent name "${agentName}" (contains path separator)`,
+            ),
+          );
+          continue;
+        }
+        const fullPath = path.join(agentsDir, agentName + ".md");
         if (fs.existsSync(fullPath)) {
           fs.removeSync(fullPath);
           if (verbose) {

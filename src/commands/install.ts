@@ -525,7 +525,7 @@ function getAgentsTargetPath(target: SupportedTarget): string | null {
  * Metadata file written to the agents directory to track aicm-managed agents
  */
 interface AgentsAicmMetadata {
-  managedAgents: string[]; // List of agent file paths relative to agents directory
+  managedAgents: string[]; // List of agent names (without path or extension)
 }
 
 /**
@@ -557,8 +557,17 @@ export function writeAgentsToTargets(
         const existingMetadata: AgentsAicmMetadata =
           fs.readJsonSync(metadataPath);
         // Remove previously managed agents
-        for (const agentPath of existingMetadata.managedAgents || []) {
-          const fullPath = path.join(targetAgentsDir, agentPath);
+        for (const agentName of existingMetadata.managedAgents || []) {
+          // Skip invalid names containing path separators
+          if (agentName.includes("/") || agentName.includes("\\")) {
+            console.warn(
+              chalk.yellow(
+                `Warning: Skipping invalid agent name "${agentName}" (contains path separator)`,
+              ),
+            );
+            continue;
+          }
+          const fullPath = path.join(targetAgentsDir, agentName + ".md");
           if (fs.existsSync(fullPath)) {
             fs.removeSync(fullPath);
           }
@@ -571,16 +580,12 @@ export function writeAgentsToTargets(
     const managedAgents: string[] = [];
 
     for (const agent of agents) {
-      const agentNameParts = agent.name
-        .replace(/\\/g, "/")
-        .split("/")
-        .filter(Boolean);
-      const relativePath = agentNameParts.join("/") + ".md";
-      const agentFile = path.join(targetAgentsDir, ...agentNameParts) + ".md";
+      // Use base name only
+      const agentName = path.basename(agent.name, path.extname(agent.name));
+      const agentFile = path.join(targetAgentsDir, agentName + ".md");
 
-      fs.ensureDirSync(path.dirname(agentFile));
       fs.writeFileSync(agentFile, agent.content);
-      managedAgents.push(relativePath);
+      managedAgents.push(agentName);
     }
 
     // Write metadata file to track managed agents
