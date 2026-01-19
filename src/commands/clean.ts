@@ -237,6 +237,83 @@ function cleanSkills(cwd: string, verbose: boolean): number {
   return cleanedCount;
 }
 
+/**
+ * Metadata file structure for tracking aicm-managed agents
+ */
+interface AgentsAicmMetadata {
+  managedAgents: string[]; // List of agent names (without path or extension)
+}
+
+/**
+ * Clean aicm-managed agents from agents directories
+ * Only removes agents that are tracked in .aicm.json metadata file
+ */
+function cleanAgents(cwd: string, verbose: boolean): number {
+  let cleanedCount = 0;
+
+  // Agents directories for each target
+  const agentsDirs = [
+    path.join(cwd, ".cursor", "agents"),
+    path.join(cwd, ".claude", "agents"),
+  ];
+
+  for (const agentsDir of agentsDirs) {
+    const metadataPath = path.join(agentsDir, ".aicm.json");
+
+    if (!fs.existsSync(metadataPath)) {
+      continue;
+    }
+
+    try {
+      const metadata: AgentsAicmMetadata = fs.readJsonSync(metadataPath);
+
+      // Remove all managed agents (names only)
+      for (const agentName of metadata.managedAgents || []) {
+        // Skip invalid names containing path separators (security check)
+        if (agentName.includes("/") || agentName.includes("\\")) {
+          console.warn(
+            chalk.yellow(
+              `Warning: Skipping invalid agent name "${agentName}" (contains path separator)`,
+            ),
+          );
+          continue;
+        }
+        const fullPath = path.join(agentsDir, agentName + ".md");
+        if (fs.existsSync(fullPath)) {
+          fs.removeSync(fullPath);
+          if (verbose) {
+            console.log(chalk.gray(`  Removed agent ${fullPath}`));
+          }
+          cleanedCount++;
+        }
+      }
+
+      // Remove the metadata file
+      fs.removeSync(metadataPath);
+      if (verbose) {
+        console.log(chalk.gray(`  Removed ${metadataPath}`));
+      }
+
+      // Remove the agents directory if it's now empty
+      if (fs.existsSync(agentsDir)) {
+        const remainingEntries = fs.readdirSync(agentsDir);
+        if (remainingEntries.length === 0) {
+          fs.removeSync(agentsDir);
+          if (verbose) {
+            console.log(chalk.gray(`  Removed empty directory ${agentsDir}`));
+          }
+        }
+      }
+    } catch {
+      console.warn(
+        chalk.yellow(`Warning: Failed to clean agents in ${agentsDir}`),
+      );
+    }
+  }
+
+  return cleanedCount;
+}
+
 function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
   let cleanedCount = 0;
 
@@ -246,8 +323,10 @@ function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
     path.join(cwd, ".cursor", "assets"),
     path.join(cwd, ".cursor", "hooks"),
     path.join(cwd, ".cursor", "skills"),
+    path.join(cwd, ".cursor", "agents"),
     path.join(cwd, ".cursor"),
     path.join(cwd, ".claude", "skills"),
+    path.join(cwd, ".claude", "agents"),
     path.join(cwd, ".claude"),
     path.join(cwd, ".codex", "skills"),
     path.join(cwd, ".codex"),
@@ -312,6 +391,9 @@ export async function cleanPackage(
 
     // Clean skills
     cleanedCount += cleanSkills(cwd, verbose);
+
+    // Clean agents
+    cleanedCount += cleanAgents(cwd, verbose);
 
     // Clean empty directories
     cleanedCount += cleanEmptyDirectories(cwd, verbose);

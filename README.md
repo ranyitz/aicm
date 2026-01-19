@@ -17,6 +17,7 @@ A CLI tool for managing Agentic configurations across projects.
   - [Rules](#rules)
   - [Commands](#commands)
   - [Skills](#skills)
+  - [Agents](#agents)
   - [Hooks](#hooks)
   - [MCP Servers](#mcp-servers)
   - [Assets](#assets)
@@ -88,6 +89,7 @@ After installation, open Cursor and ask it to do something. Your AI assistant wi
 │   └── react.mdc
 ├── commands/        # Command files (.md) [optional]
 ├── skills/          # Agent Skills [optional]
+├── agents/          # Subagents (.md) [optional]
 ├── assets/          # Auxiliary files [optional]
 └── hooks.json       # Hook configuration [optional]
 ```
@@ -142,7 +144,7 @@ The rules are now installed in `.cursor/rules/aicm/` and any MCP servers are con
 ### Notes
 
 - Generated files are always placed in subdirectories for deterministic cleanup and easy gitignore.
-- Users should add `.cursor/*/aicm/`, `.cursor/skills/`, `.claude/`, and `.codex/` to `.gitignore` to avoid tracking generated files.
+- Users may add `.cursor/*/aicm/`, `.cursor/skills/`, `.cursor/agents/`, `.claude/`, and `.codex/` to `.gitignore` to avoid tracking generated files.
 
 ## Features
 
@@ -254,6 +256,77 @@ Skills are installed to different locations based on the target:
 When installed, each skill directory is copied in its entirety (including `scripts/`, `references/`, `assets/` subdirectories). A `.aicm.json` file is added inside each installed skill to track that it's managed by aicm.
 
 In workspace mode, skills are installed both to each package and merged at the root level, similar to commands.
+
+### Agents
+
+aicm supports [Cursor Subagents](https://cursor.com/docs/context/subagents) and [Claude Code Subagents](https://code.claude.com/docs/en/sub-agents) - specialized AI assistants that can be delegated specific tasks. Agents are markdown files with YAML frontmatter that define custom prompts, descriptions, and model configurations.
+
+Create an `agents/` directory in your project (at the `rootDir` location):
+
+```
+my-project/
+├── aicm.json
+└── agents/
+    ├── code-reviewer.md
+    ├── debugger.md
+    └── specialized/
+        └── security-auditor.md
+```
+
+Each agent file should have YAML frontmatter with at least a `name` and `description`:
+
+```markdown
+---
+name: code-reviewer
+description: Reviews code for quality and best practices. Use after code changes.
+model: inherit
+---
+
+You are a senior code reviewer ensuring high standards of code quality and security.
+
+When invoked:
+
+1. Run git diff to see recent changes
+2. Focus on modified files
+3. Begin review immediately
+
+Review checklist:
+
+- Code is clear and readable
+- Functions and variables are well-named
+- No duplicated code
+- Proper error handling
+```
+
+Configure your `aicm.json`:
+
+```json
+{
+  "rootDir": "./",
+  "targets": ["cursor", "claude"]
+}
+```
+
+Agents are installed to different locations based on the target:
+
+| Target     | Agents Location   |
+| ---------- | ----------------- |
+| **Cursor** | `.cursor/agents/` |
+| **Claude** | `.claude/agents/` |
+
+A `.aicm.json` metadata file is created in the agents directory to track which agents are managed by aicm. This allows the clean command to remove only aicm-managed agents while preserving any manually created agents.
+
+**Supported Configuration Fields:**
+
+Only fields that work in both Cursor and Claude Code are documented:
+
+- `name` - Unique identifier (defaults to filename without extension)
+- `description` - When the agent should be used for task delegation
+- `model` - Model to use (`inherit`, or platform-specific values like `sonnet`, `haiku`, `fast`)
+
+> **Note:** Users may include additional platform-specific fields (e.g., `tools`, `hooks` for Claude Code, or `readonly`, `is_background` for Cursor) - aicm will preserve them, but they only work on the respective platform.
+
+In workspace mode, agents are installed both to each package and merged at the root level, similar to commands and skills.
 
 ### Hooks
 
@@ -431,10 +504,11 @@ aicm automatically detects workspaces if your `package.json` contains a `workspa
 ### How It Works
 
 1. **Discover packages**: Automatically find all directories containing `aicm.json` files in your repository.
-2. **Install per package**: Install rules, commands, and skills for each package individually in their respective directories.
+2. **Install per package**: Install rules, commands, skills, and agents for each package individually in their respective directories.
 3. **Merge MCP servers**: Write a merged `.cursor/mcp.json` at the repository root containing all MCP servers from every package.
 4. **Merge commands**: Write a merged `.cursor/commands/aicm/` at the repository root containing all commands from every package.
 5. **Merge skills**: Write merged skills to the repository root (e.g., `.cursor/skills/`) containing all skills from every package.
+6. **Merge agents**: Write merged agents to the repository root (e.g., `.cursor/agents/`) containing all agents from every package.
 
 For example, in a workspace structure like:
 
@@ -492,7 +566,7 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 
 ### Configuration Options
 
-- **rootDir**: Directory containing your aicm structure. Must contain one or more of: `rules/`, `commands/`, `skills/`, `assets/`, `hooks/`, or `hooks.json`. If not specified, aicm will only install rules from presets and will not pick up any local directories.
+- **rootDir**: Directory containing your aicm structure. Must contain one or more of: `rules/`, `commands/`, `skills/`, `agents/`, `assets/`, `hooks/`, or `hooks.json`. If not specified, aicm will only install rules from presets and will not pick up any local directories.
 - **targets**: IDEs/Agent targets where rules should be installed. Defaults to `["cursor"]`. Supported targets: `cursor`, `windsurf`, `codex`, `claude`.
 - **presets**: List of preset packages or paths to include.
 - **mcpServers**: MCP server configurations.
@@ -542,6 +616,8 @@ my-project/
 ├── skills/          # Agent Skills [optional]
 │   └── my-skill/
 │       └── SKILL.md
+├── agents/          # Subagents (.md) [optional]
+│   └── code-reviewer.md
 ├── assets/          # Auxiliary files [optional]
 │   ├── schema.json
 │   └── examples/
