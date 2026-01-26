@@ -450,7 +450,8 @@ export function extractNamespaceFromPresetPath(presetPath: string): string[] {
     return presetPath.split("/");
   }
 
-  const parts = presetPath.split(path.sep);
+  // Always split by forward slash since JSON config files use forward slashes on all platforms
+  const parts = presetPath.split(path.posix.sep);
   return parts.filter(
     (part) => part.length > 0 && part !== "." && part !== "..",
   );
