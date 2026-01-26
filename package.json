@@ -37,6 +37,10 @@
   ],
   "author": "Ran Yitzhaki <ranyitz@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ranyitz/aicm"
+  },
   "dependencies": {
     "arg": "^5.0.2",
     "chalk": "^4.1.2",
