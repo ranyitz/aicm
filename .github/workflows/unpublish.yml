@@ -1,0 +1,33 @@
+name: Unpublish version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to unpublish (e.g., 0.20.5)"
+        required: true
+        type: string
+      new_latest:
+        description: "New version to tag as latest (leave empty to skip)"
+        required: false
+        type: string
+
+jobs:
+  unpublish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Unpublish version
+        run: npm unpublish aicm@${{ inputs.version }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Set new latest tag
+        if: ${{ inputs.new_latest != '' }}
+        run: npm dist-tag add aicm@${{ inputs.new_latest }} latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
