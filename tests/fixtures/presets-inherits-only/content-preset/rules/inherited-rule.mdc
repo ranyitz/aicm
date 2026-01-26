@@ -1,0 +1,8 @@
+---
+description: Rule inherited through wrapper preset
+globs:
+alwaysApply: false
+---
+# Inherited Rule
+
+This rule comes from the content preset, accessed via the wrapper preset.

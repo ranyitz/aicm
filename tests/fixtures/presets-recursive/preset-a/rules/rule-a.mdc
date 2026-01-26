@@ -1,0 +1,8 @@
+---
+description: Rule from preset A
+globs:
+alwaysApply: false
+---
+# Rule A
+
+This rule comes from preset A.

@@ -1,0 +1,4 @@
+{
+  "rootDir": "./",
+  "presets": ["../preset-b"]
+}
