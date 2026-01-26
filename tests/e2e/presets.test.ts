@@ -5,6 +5,7 @@ import {
   runFailedCommand,
   fileExists,
   readTestFile,
+  testDir,
 } from "./helpers";
 
 test("install rules from a preset file", async () => {
@@ -149,6 +150,39 @@ test("handle npm package presets", async () => {
     ),
   );
   expect(npmRuleContent).toContain("NPM Package Rule");
+});
+
+test("install rules from sibling preset using ../ path", async () => {
+  await setupFromFixture("presets-sibling");
+
+  // Run from the project/ subdirectory which has the main config
+  const projectDir = path.join(testDir, "project");
+  const { stdout, code } = await runCommand("install --ci", projectDir);
+
+  expect(code).toBe(0);
+  expect(stdout).toContain("Successfully installed 1 rule");
+
+  // Check that rule from sibling preset was installed with sibling-preset namespace
+  // This specifically tests that ../sibling-preset is correctly parsed as namespace ["sibling-preset"]
+  // and NOT ["../sibling-preset"] which would create wrong directory structure
+  expect(
+    fileExists(
+      path.join(
+        ".cursor",
+        "rules",
+        "aicm",
+        "sibling-preset",
+        "sibling-rule.mdc",
+      ),
+      projectDir,
+    ),
+  ).toBe(true);
+
+  const ruleContent = readTestFile(
+    path.join(".cursor", "rules", "aicm", "sibling-preset", "sibling-rule.mdc"),
+    projectDir,
+  );
+  expect(ruleContent).toContain("Sibling Preset Rule");
 });
 
 test("handle errors with missing preset files", async () => {
