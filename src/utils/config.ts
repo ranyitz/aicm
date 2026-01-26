@@ -492,6 +492,7 @@ export async function loadPreset(
 ): Promise<{
   config: Config;
   rootDir: string;
+  resolvedPath: string;
 }> {
   const resolvedPresetPath = resolvePresetPath(presetPath, cwd);
 
@@ -515,31 +516,177 @@ export async function loadPreset(
   const presetDir = path.dirname(resolvedPresetPath);
   const presetRootDir = path.resolve(presetDir, presetConfig.rootDir || "./");
 
-  // Check for at least one valid subdirectory
+  // Check if preset has content or inherits from other presets
   const hasRules = fs.existsSync(path.join(presetRootDir, "rules"));
   const hasCommands = fs.existsSync(path.join(presetRootDir, "commands"));
   const hasHooks = fs.existsSync(path.join(presetRootDir, "hooks.json"));
   const hasAssets = fs.existsSync(path.join(presetRootDir, "assets"));
   const hasSkills = fs.existsSync(path.join(presetRootDir, "skills"));
   const hasAgents = fs.existsSync(path.join(presetRootDir, "agents"));
+  const hasNestedPresets =
+    Array.isArray(presetConfig.presets) && presetConfig.presets.length > 0;
 
-  if (
-    !hasRules &&
-    !hasCommands &&
-    !hasHooks &&
-    !hasAssets &&
-    !hasSkills &&
-    !hasAgents
-  ) {
+  const hasAnyContent =
+    hasRules ||
+    hasCommands ||
+    hasHooks ||
+    hasAssets ||
+    hasSkills ||
+    hasAgents ||
+    hasNestedPresets;
+
+  if (!hasAnyContent) {
     throw new Error(
-      `Preset "${presetPath}" must have at least one of: rules/, commands/, skills/, agents/, hooks.json, or assets/`,
+      `Preset "${presetPath}" must have at least one of: rules/, commands/, skills/, agents/, hooks.json, assets/, or presets`,
     );
   }
 
   return {
     config: presetConfig,
     rootDir: presetRootDir,
+    resolvedPath: resolvedPresetPath,
   };
+}
+
+/**
+ * Result of recursively loading a preset and its dependencies
+ */
+interface PresetLoadResult {
+  rules: RuleFile[];
+  commands: CommandFile[];
+  assets: AssetFile[];
+  skills: SkillFile[];
+  agents: AgentFile[];
+  mcpServers: MCPServers;
+  hooksConfigs: HooksJson[];
+  hookFiles: HookFile[];
+}
+
+/**
+ * Recursively load a preset and all its dependencies
+ * @param presetPath The original preset path (used for namespacing)
+ * @param cwd The current working directory for resolving paths
+ * @param visited Set of already visited preset paths (by resolved absolute path) for cycle detection
+ */
+async function loadPresetRecursively(
+  presetPath: string,
+  cwd: string,
+  visited: Set<string>,
+): Promise<PresetLoadResult> {
+  const preset = await loadPreset(presetPath, cwd);
+  const presetRootDir = preset.rootDir;
+  const presetDir = path.dirname(preset.resolvedPath);
+
+  // Check for circular dependency
+  if (visited.has(preset.resolvedPath)) {
+    throw new Error(
+      `Circular preset dependency detected: "${presetPath}" has already been loaded`,
+    );
+  }
+  visited.add(preset.resolvedPath);
+
+  const result: PresetLoadResult = {
+    rules: [],
+    commands: [],
+    assets: [],
+    skills: [],
+    agents: [],
+    mcpServers: {},
+    hooksConfigs: [],
+    hookFiles: [],
+  };
+
+  // Load entities from this preset's rootDir
+  const presetRulesPath = path.join(presetRootDir, "rules");
+  if (fs.existsSync(presetRulesPath)) {
+    const presetRules = await loadRulesFromDirectory(
+      presetRulesPath,
+      "preset",
+      presetPath,
+    );
+    result.rules.push(...presetRules);
+  }
+
+  const presetCommandsPath = path.join(presetRootDir, "commands");
+  if (fs.existsSync(presetCommandsPath)) {
+    const presetCommands = await loadCommandsFromDirectory(
+      presetCommandsPath,
+      "preset",
+      presetPath,
+    );
+    result.commands.push(...presetCommands);
+  }
+
+  const presetHooksFile = path.join(presetRootDir, "hooks.json");
+  if (fs.existsSync(presetHooksFile)) {
+    const { config: presetHooksConfig, files: presetHookFiles } =
+      await loadHooksFromDirectory(presetRootDir, "preset", presetPath);
+    result.hooksConfigs.push(presetHooksConfig);
+    result.hookFiles.push(...presetHookFiles);
+  }
+
+  const presetAssetsPath = path.join(presetRootDir, "assets");
+  if (fs.existsSync(presetAssetsPath)) {
+    const presetAssets = await loadAssetsFromDirectory(
+      presetAssetsPath,
+      "preset",
+      presetPath,
+    );
+    result.assets.push(...presetAssets);
+  }
+
+  const presetSkillsPath = path.join(presetRootDir, "skills");
+  if (fs.existsSync(presetSkillsPath)) {
+    const presetSkills = await loadSkillsFromDirectory(
+      presetSkillsPath,
+      "preset",
+      presetPath,
+    );
+    result.skills.push(...presetSkills);
+  }
+
+  const presetAgentsPath = path.join(presetRootDir, "agents");
+  if (fs.existsSync(presetAgentsPath)) {
+    const presetAgents = await loadAgentsFromDirectory(
+      presetAgentsPath,
+      "preset",
+      presetPath,
+    );
+    result.agents.push(...presetAgents);
+  }
+
+  // Add MCP servers from this preset
+  if (preset.config.mcpServers) {
+    result.mcpServers = { ...preset.config.mcpServers };
+  }
+
+  // Recursively load nested presets
+  if (preset.config.presets && preset.config.presets.length > 0) {
+    for (const nestedPresetPath of preset.config.presets) {
+      const nestedResult = await loadPresetRecursively(
+        nestedPresetPath,
+        presetDir, // Use preset's directory as cwd for relative paths
+        visited,
+      );
+
+      // Merge results from nested preset
+      result.rules.push(...nestedResult.rules);
+      result.commands.push(...nestedResult.commands);
+      result.assets.push(...nestedResult.assets);
+      result.skills.push(...nestedResult.skills);
+      result.agents.push(...nestedResult.agents);
+      result.hooksConfigs.push(...nestedResult.hooksConfigs);
+      result.hookFiles.push(...nestedResult.hookFiles);
+
+      // Merge MCP servers (current preset takes precedence over nested)
+      result.mcpServers = mergePresetMcpServers(
+        result.mcpServers,
+        nestedResult.mcpServers,
+      );
+    }
+  }
+
+  return result;
 }
 
 export async function loadAllRules(
@@ -616,83 +763,30 @@ export async function loadAllRules(
     }
   }
 
-  // Load presets
-  if (config.presets) {
+  // Load presets recursively
+  if (config.presets && config.presets.length > 0) {
+    const visited = new Set<string>();
+
     for (const presetPath of config.presets) {
-      const preset = await loadPreset(presetPath, cwd);
-      const presetRootDir = preset.rootDir;
+      const presetResult = await loadPresetRecursively(
+        presetPath,
+        cwd,
+        visited,
+      );
 
-      // Load preset rules from rules/ subdirectory
-      const presetRulesPath = path.join(presetRootDir, "rules");
-      if (fs.existsSync(presetRulesPath)) {
-        const presetRules = await loadRulesFromDirectory(
-          presetRulesPath,
-          "preset",
-          presetPath,
-        );
-        allRules.push(...presetRules);
-      }
+      allRules.push(...presetResult.rules);
+      allCommands.push(...presetResult.commands);
+      allAssets.push(...presetResult.assets);
+      allSkills.push(...presetResult.skills);
+      allAgents.push(...presetResult.agents);
+      allHooksConfigs.push(...presetResult.hooksConfigs);
+      allHookFiles.push(...presetResult.hookFiles);
 
-      // Load preset commands from commands/ subdirectory
-      const presetCommandsPath = path.join(presetRootDir, "commands");
-      if (fs.existsSync(presetCommandsPath)) {
-        const presetCommands = await loadCommandsFromDirectory(
-          presetCommandsPath,
-          "preset",
-          presetPath,
-        );
-        allCommands.push(...presetCommands);
-      }
-
-      // Load preset hooks from hooks.json (sibling to hooks/ directory)
-      const presetHooksFile = path.join(presetRootDir, "hooks.json");
-      if (fs.existsSync(presetHooksFile)) {
-        const { config: presetHooksConfig, files: presetHookFiles } =
-          await loadHooksFromDirectory(presetRootDir, "preset", presetPath);
-        allHooksConfigs.push(presetHooksConfig);
-        allHookFiles.push(...presetHookFiles);
-      }
-
-      // Load preset assets from assets/ subdirectory
-      const presetAssetsPath = path.join(presetRootDir, "assets");
-      if (fs.existsSync(presetAssetsPath)) {
-        const presetAssets = await loadAssetsFromDirectory(
-          presetAssetsPath,
-          "preset",
-          presetPath,
-        );
-        allAssets.push(...presetAssets);
-      }
-
-      // Load preset skills from skills/ subdirectory
-      const presetSkillsPath = path.join(presetRootDir, "skills");
-      if (fs.existsSync(presetSkillsPath)) {
-        const presetSkills = await loadSkillsFromDirectory(
-          presetSkillsPath,
-          "preset",
-          presetPath,
-        );
-        allSkills.push(...presetSkills);
-      }
-
-      // Load preset agents from agents/ subdirectory
-      const presetAgentsPath = path.join(presetRootDir, "agents");
-      if (fs.existsSync(presetAgentsPath)) {
-        const presetAgents = await loadAgentsFromDirectory(
-          presetAgentsPath,
-          "preset",
-          presetPath,
-        );
-        allAgents.push(...presetAgents);
-      }
-
-      // Merge MCP servers from preset
-      if (preset.config.mcpServers) {
-        mergedMcpServers = mergePresetMcpServers(
-          mergedMcpServers,
-          preset.config.mcpServers,
-        );
-      }
+      // Merge MCP servers (local config takes precedence)
+      mergedMcpServers = mergePresetMcpServers(
+        mergedMcpServers,
+        presetResult.mcpServers,
+      );
     }
   }
 

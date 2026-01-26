@@ -304,3 +304,85 @@ test("preset commands and rules correctly reference assets with namespace paths"
     "[schema.json](../../../assets/aicm/my-preset/schema.json)",
   );
 });
+
+test("install rules from recursively inherited presets", async () => {
+  await setupFromFixture("presets-recursive");
+
+  const { stdout, code } = await runCommand("install --ci");
+
+  expect(code).toBe(0);
+  expect(stdout).toContain("Successfully installed 2 rules");
+
+  // Check that rule from preset-a was installed with preset-a namespace
+  expect(
+    fileExists(path.join(".cursor", "rules", "aicm", "preset-a", "rule-a.mdc")),
+  ).toBe(true);
+
+  // Check that rule from preset-b was installed with preset-b namespace
+  // (nested preset inherits from ../preset-b relative to preset-a)
+  expect(
+    fileExists(path.join(".cursor", "rules", "aicm", "preset-b", "rule-b.mdc")),
+  ).toBe(true);
+
+  const ruleAContent = readTestFile(
+    path.join(".cursor", "rules", "aicm", "preset-a", "rule-a.mdc"),
+  );
+  expect(ruleAContent).toContain("Rule A");
+
+  const ruleBContent = readTestFile(
+    path.join(".cursor", "rules", "aicm", "preset-b", "rule-b.mdc"),
+  );
+  expect(ruleBContent).toContain("Rule B");
+});
+
+test("install rules from inherits-only preset (no own content)", async () => {
+  await setupFromFixture("presets-inherits-only");
+
+  const { stdout, code } = await runCommand("install --ci");
+
+  expect(code).toBe(0);
+  expect(stdout).toContain("Successfully installed 1 rule");
+
+  // The wrapper preset has no content, but inherits from content-preset
+  // The rule should be installed with the content-preset namespace
+  expect(
+    fileExists(
+      path.join(
+        ".cursor",
+        "rules",
+        "aicm",
+        "content-preset",
+        "inherited-rule.mdc",
+      ),
+    ),
+  ).toBe(true);
+
+  const ruleContent = readTestFile(
+    path.join(
+      ".cursor",
+      "rules",
+      "aicm",
+      "content-preset",
+      "inherited-rule.mdc",
+    ),
+  );
+  expect(ruleContent).toContain("Inherited Rule");
+});
+
+test("detect circular preset dependencies", async () => {
+  await setupFromFixture("presets-circular");
+
+  const { stderr, code } = await runFailedCommand("install --ci");
+
+  expect(code).not.toBe(0);
+  expect(stderr).toContain("Circular preset dependency detected");
+});
+
+test("error on empty preset without content or nested presets", async () => {
+  await setupFromFixture("presets-empty-chain");
+
+  const { stderr, code } = await runFailedCommand("install --ci");
+
+  expect(code).not.toBe(0);
+  expect(stderr).toContain("must have at least one of");
+});
