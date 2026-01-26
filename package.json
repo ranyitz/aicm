@@ -25,7 +25,7 @@
     "lint": "eslint",
     "prepare": "husky install && npx ts-node src/bin/aicm.ts install",
     "version": "auto-changelog -p && git add CHANGELOG.md",
-    "release": "np --no-tests"
+    "release": "np --no-tests --no-publish"
   },
   "keywords": [
     "ai",
