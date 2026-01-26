@@ -21,13 +21,13 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Unpublish version
-        run: npm unpublish aicm@${{ inputs.version }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Set new latest tag
         if: ${{ inputs.new_latest != '' }}
         run: npm dist-tag add aicm@${{ inputs.new_latest }} latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Unpublish version
+        run: npm unpublish aicm@${{ inputs.version }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
