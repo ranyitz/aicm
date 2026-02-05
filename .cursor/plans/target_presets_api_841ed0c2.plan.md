@@ -153,7 +153,7 @@ New function `resolvePresets()` in [src/utils/presets.ts](src/utils/presets.ts):
 4. For each explicit target type in the config object, **replace** the preset's merged value for that type
 5. Return a fully resolved `Required<TargetsConfig>`
 
-When no presets are specified, fall back to current default behavior.
+When no presets are specified, fall back to agent-agnostic defaults (`AGENTS.md`, `.agents/skills`, `.agents/agents`, `.agents/mcp.json`, `.agents`).
 
 ## Hook Format Differences
 

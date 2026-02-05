@@ -319,19 +319,19 @@ When multiple presets provide instructions, merge deterministically with clear s
 - Remove Cursor-specific frontmatter (`globs`, `alwaysApply`)
 - Add v1.0 frontmatter (`description`, `alwaysInclude`)
 
-2. **Commands to Skills**: Convert command files to skill directories
+1. **Commands to Skills**: Convert command files to skill directories
 
 - Create `SKILL.md` with proper frontmatter
 
-3. **Assets**: Move into relevant skills or remove if unused
-4. **Config Update**: Update `aicm.json` schema
+1. **Assets**: Move into relevant skills or remove if unused
+2. **Config Update**: Update `aicm.json` schema
 
 - Keep `rootDir` (unchanged)
 - Replace `targets` array with `targets` object
 - Add optional `instructions` string
 - Add `mcp` and `hooks` arrays to targets
 
-5. **Windsurf**: Replace `"windsurf"` target with appropriate `targets` entries
+1. **Windsurf**: Replace `"windsurf"` target with appropriate `targets` entries
 
 ## CLI Changes
 

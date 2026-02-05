@@ -189,14 +189,15 @@ function mergePresetTargets(presetNames: string[]): Required<TargetsConfig> {
 }
 
 /**
- * Default targets when no presets or overrides are specified (backward compatible)
+ * Default targets when no presets or overrides are specified.
+ * Uses agent-agnostic .agents/ paths and AGENTS.md as a neutral default.
  */
 const DEFAULT_TARGETS: Required<TargetsConfig> = {
   skills: [".agents/skills"],
   agents: [".agents/agents"],
   instructions: ["AGENTS.md"],
-  mcp: [".cursor/mcp.json"],
-  hooks: [".cursor"],
+  mcp: [".agents/mcp.json"],
+  hooks: [".agents"],
 };
 
 /**
