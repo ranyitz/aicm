@@ -14,6 +14,7 @@ import {
   HooksJson,
   countHooks,
   writeHooksToCursor,
+  writeHooksToClaudeCode,
 } from "../utils/hooks";
 import { withWorkingDirectory } from "../utils/working-directory";
 import { isCIEnvironment } from "../utils/is-ci";
@@ -437,6 +438,8 @@ function writeHooksToTargets(
     const targetPath = resolveTargetPath(target, cwd);
     if (path.basename(targetPath) === ".cursor") {
       writeHooksToCursor(hooksConfig, hookFiles, path.dirname(targetPath));
+    } else if (path.basename(targetPath) === ".claude") {
+      writeHooksToClaudeCode(hooksConfig, hookFiles, path.dirname(targetPath));
     }
   }
 }

@@ -1,0 +1,14 @@
+{
+  "rootDir": "./",
+  "instructions": "instructions/",
+  "targets": {
+    "presets": ["cursor", "claude-code"],
+    "mcp": [".cursor/mcp.json", ".mcp.json", "extra-mcp.json"]
+  },
+  "mcpServers": {
+    "test-server": {
+      "command": "echo",
+      "args": ["hello"]
+    }
+  }
+}

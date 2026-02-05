@@ -9,6 +9,7 @@ import {
   HookFile,
 } from "./hooks";
 import { InstructionFile, loadInstructionsFromPath } from "./instructions";
+import { TargetsInput, validateTargetsInput, resolveTargets } from "./presets";
 
 export interface TargetsConfig {
   skills?: string[];
@@ -21,7 +22,7 @@ export interface TargetsConfig {
 export interface RawConfig {
   rootDir?: string;
   instructions?: string;
-  targets?: TargetsConfig;
+  targets?: TargetsInput;
   presets?: string[];
   mcpServers?: MCPServers;
   workspaces?: boolean;
@@ -130,17 +131,10 @@ export function resolveWorkspaces(
 }
 
 export function applyDefaults(config: RawConfig, workspaces: boolean): Config {
-  const targets = config.targets ?? {};
   return {
     rootDir: config.rootDir,
     instructions: config.instructions,
-    targets: {
-      skills: targets.skills ?? [".agents/skills"],
-      agents: targets.agents ?? [".agents/agents"],
-      instructions: targets.instructions ?? ["AGENTS.md"],
-      mcp: targets.mcp ?? [".cursor/mcp.json"],
-      hooks: targets.hooks ?? [".cursor"],
-    },
+    targets: resolveTargets(config.targets),
     presets: config.presets || [],
     mcpServers: config.mcpServers || {},
     workspaces,
@@ -234,32 +228,7 @@ export function validateConfig(
   }
 
   if ("targets" in config) {
-    if (typeof config.targets !== "object" || config.targets === null) {
-      throw new Error(
-        `targets must be an object in config at ${configFilePath}`,
-      );
-    }
-
-    const entries = Object.entries(config.targets as TargetsConfig);
-    for (const [key, value] of entries) {
-      if (!Array.isArray(value)) {
-        throw new Error(
-          `targets.${key} must be an array in config at ${configFilePath}`,
-        );
-      }
-      if (value.length === 0) {
-        throw new Error(
-          `targets.${key} must not be empty in config at ${configFilePath}`,
-        );
-      }
-      for (const item of value) {
-        if (typeof item !== "string") {
-          throw new Error(
-            `targets.${key} entries must be strings in config at ${configFilePath}`,
-          );
-        }
-      }
-    }
+    validateTargetsInput(config.targets, configFilePath);
   }
 }
 

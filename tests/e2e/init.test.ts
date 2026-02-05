@@ -22,13 +22,7 @@ test("should create default config file", async () => {
   expect(config).toEqual({
     rootDir: "./",
     instructions: "instructions/",
-    targets: {
-      skills: [".agents/skills"],
-      agents: [".agents/agents"],
-      instructions: ["AGENTS.md"],
-      mcp: [".cursor/mcp.json"],
-      hooks: [".cursor"],
-    },
+    targets: ["cursor", "claude-code"],
   });
 });
 

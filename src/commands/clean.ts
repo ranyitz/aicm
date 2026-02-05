@@ -117,7 +117,7 @@ function cleanMcpServers(cwd: string, verbose: boolean): boolean {
   return cleanedAny;
 }
 
-function cleanHooks(cwd: string, verbose: boolean): boolean {
+function cleanCursorHooks(cwd: string, verbose: boolean): boolean {
   const hooksJsonPath = path.join(cwd, ".cursor", "hooks.json");
   const hooksDir = path.join(cwd, ".cursor", "hooks", "aicm");
 
@@ -185,6 +185,96 @@ function cleanHooks(cwd: string, verbose: boolean): boolean {
     }
   }
 
+  return hasChanges;
+}
+
+function cleanClaudeCodeHooks(cwd: string, verbose: boolean): boolean {
+  const settingsPath = path.join(cwd, ".claude", "settings.json");
+  const hooksDir = path.join(cwd, ".claude", "hooks", "aicm");
+
+  let hasChanges = false;
+
+  // Clean hooks directory
+  if (fs.existsSync(hooksDir)) {
+    fs.removeSync(hooksDir);
+    if (verbose) console.log(chalk.gray(`  Removed ${hooksDir}`));
+    hasChanges = true;
+  }
+
+  // Clean hooks from .claude/settings.json
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const settings: Record<string, unknown> = fs.readJsonSync(settingsPath);
+      const hooks = settings.hooks as Record<string, unknown[]> | undefined;
+
+      if (hooks) {
+        const userHooks: Record<string, unknown[]> = {};
+        let removedAny = false;
+
+        for (const [eventName, matcherGroups] of Object.entries(hooks)) {
+          if (Array.isArray(matcherGroups)) {
+            const userGroups = matcherGroups.filter((group) => {
+              if (typeof group !== "object" || group === null) return true;
+              const g = group as Record<string, unknown>;
+              if (!Array.isArray(g.hooks)) return true;
+              // Keep groups that don't reference hooks/aicm/
+              return !g.hooks.some(
+                (h: unknown) =>
+                  typeof h === "object" &&
+                  h !== null &&
+                  typeof (h as Record<string, unknown>).command === "string" &&
+                  ((h as Record<string, unknown>).command as string).includes(
+                    "hooks/aicm/",
+                  ),
+              );
+            });
+
+            if (userGroups.length < matcherGroups.length) {
+              removedAny = true;
+            }
+
+            if (userGroups.length > 0) {
+              userHooks[eventName] = userGroups;
+            }
+          }
+        }
+
+        if (removedAny) {
+          if (Object.keys(userHooks).length > 0) {
+            settings.hooks = userHooks;
+          } else {
+            delete settings.hooks;
+          }
+
+          // If settings is now empty (or only has hooks which was deleted), remove the file
+          if (Object.keys(settings).length === 0) {
+            fs.removeSync(settingsPath);
+            if (verbose)
+              console.log(chalk.gray(`  Removed empty ${settingsPath}`));
+          } else {
+            fs.writeJsonSync(settingsPath, settings, { spaces: 2 });
+            if (verbose)
+              console.log(
+                chalk.gray(`  Cleaned aicm hooks from ${settingsPath}`),
+              );
+          }
+          hasChanges = true;
+        }
+      }
+    } catch {
+      console.warn(
+        chalk.yellow(`Warning: Failed to clean Claude Code settings.json`),
+      );
+    }
+  }
+
+  return hasChanges;
+}
+
+function cleanHooks(cwd: string, verbose: boolean): boolean {
+  let hasChanges = false;
+  if (cleanCursorHooks(cwd, verbose)) hasChanges = true;
+  if (cleanClaudeCodeHooks(cwd, verbose)) hasChanges = true;
   return hasChanges;
 }
 
@@ -336,6 +426,7 @@ function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
     path.join(cwd, ".agents", "agents"),
     path.join(cwd, ".agents", "aicm"),
     path.join(cwd, ".agents"),
+    path.join(cwd, ".claude", "hooks"),
     path.join(cwd, ".claude", "skills"),
     path.join(cwd, ".claude", "agents"),
     path.join(cwd, ".claude"),
