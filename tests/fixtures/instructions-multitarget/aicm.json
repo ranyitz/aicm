@@ -1,0 +1,11 @@
+{
+  "rootDir": "./",
+  "instructions": "INSTRUCTIONS.md",
+  "targets": {
+    "skills": [".agents/skills"],
+    "agents": [".agents/agents"],
+    "instructions": ["AGENTS.md", "CLAUDE.md"],
+    "mcp": [".cursor/mcp.json"],
+    "hooks": [".cursor"]
+  }
+}

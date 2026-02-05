@@ -1,5 +1,6 @@
 {
   "rootDir": "./",
+  "instructions": "instructions/",
   "mcpServers": {
     "preset-mcp": {
       "command": "./scripts/preset-mcp.sh",

@@ -2,12 +2,11 @@ import chalk from "chalk";
 import path from "node:path";
 import {
   ResolvedConfig,
-  CommandFile,
   SkillFile,
   AgentFile,
   MCPServers,
-  SupportedTarget,
 } from "../utils/config";
+import { InstructionFile } from "../utils/instructions";
 import {
   HookFile,
   HooksJson,
@@ -21,61 +20,42 @@ import {
   installPackage,
   InstallOptions,
   InstallResult,
-  writeCommandsToTargets,
-  writeAssetsToTargets,
+  writeInstructionsToTargets,
   writeSkillsToTargets,
   writeAgentsToTargets,
-  warnPresetCommandCollisions,
   warnPresetSkillCollisions,
   warnPresetAgentCollisions,
-  dedupeCommandsForInstall,
   dedupeSkillsForInstall,
   dedupeAgentsForInstall,
   writeMcpServersToFile,
 } from "./install";
 
-function mergeWorkspaceCommands(
+function mergeWorkspaceInstructions(
   packages: Array<{
     relativePath: string;
     config: ResolvedConfig;
   }>,
-): CommandFile[] {
-  const commands: CommandFile[] = [];
-  const seenPresetCommands = new Set<string>();
+): InstructionFile[] {
+  const instructions: InstructionFile[] = [];
 
   for (const pkg of packages) {
-    const hasCursorTarget = pkg.config.config.targets.includes("cursor");
-    if (!hasCursorTarget) {
-      continue;
-    }
-
-    for (const command of pkg.config.commands ?? []) {
-      if (command.presetName) {
-        const presetKey = `${command.presetName}::${command.name}`;
-        if (seenPresetCommands.has(presetKey)) {
-          continue;
-        }
-        seenPresetCommands.add(presetKey);
-      }
-
-      commands.push(command);
-    }
+    instructions.push(...(pkg.config.instructions ?? []));
   }
 
-  return commands;
+  return instructions;
 }
 
-function collectWorkspaceCommandTargets(
+function collectWorkspaceInstructionTargets(
   packages: Array<{
     relativePath: string;
     config: ResolvedConfig;
   }>,
-): SupportedTarget[] {
-  const targets = new Set<SupportedTarget>();
+): string[] {
+  const targets = new Set<string>();
 
   for (const pkg of packages) {
-    if (pkg.config.config.targets.includes("cursor")) {
-      targets.add("cursor");
+    for (const target of pkg.config.config.targets.instructions) {
+      targets.add(target);
     }
   }
 
@@ -97,15 +77,8 @@ function mergeWorkspaceSkills(
   const seenPresetSkills = new Set<string>();
 
   for (const pkg of packages) {
-    // Skills are supported by cursor, claude, and codex targets
-    const hasSkillsTarget =
-      pkg.config.config.targets.includes("cursor") ||
-      pkg.config.config.targets.includes("claude") ||
-      pkg.config.config.targets.includes("codex");
-
-    if (!hasSkillsTarget) {
-      continue;
-    }
+    const hasSkillsTarget = pkg.config.config.targets.skills.length > 0;
+    if (!hasSkillsTarget) continue;
 
     for (const skill of pkg.config.skills ?? []) {
       if (skill.presetName) {
@@ -132,15 +105,12 @@ function collectWorkspaceSkillTargets(
     relativePath: string;
     config: ResolvedConfig;
   }>,
-): SupportedTarget[] {
-  const targets = new Set<SupportedTarget>();
+): string[] {
+  const targets = new Set<string>();
 
   for (const pkg of packages) {
-    for (const target of pkg.config.config.targets) {
-      // Skills are supported by cursor, claude, and codex
-      if (target === "cursor" || target === "claude" || target === "codex") {
-        targets.add(target as SupportedTarget);
-      }
+    for (const target of pkg.config.config.targets.skills) {
+      targets.add(target);
     }
   }
 
@@ -162,14 +132,8 @@ function mergeWorkspaceAgents(
   const seenPresetAgents = new Set<string>();
 
   for (const pkg of packages) {
-    // Agents are supported by cursor and claude targets
-    const hasAgentsTarget =
-      pkg.config.config.targets.includes("cursor") ||
-      pkg.config.config.targets.includes("claude");
-
-    if (!hasAgentsTarget) {
-      continue;
-    }
+    const hasAgentsTarget = pkg.config.config.targets.agents.length > 0;
+    if (!hasAgentsTarget) continue;
 
     for (const agent of pkg.config.agents ?? []) {
       if (agent.presetName) {
@@ -196,15 +160,12 @@ function collectWorkspaceAgentTargets(
     relativePath: string;
     config: ResolvedConfig;
   }>,
-): SupportedTarget[] {
-  const targets = new Set<SupportedTarget>();
+): string[] {
+  const targets = new Set<string>();
 
   for (const pkg of packages) {
-    for (const target of pkg.config.config.targets) {
-      // Agents are supported by cursor and claude
-      if (target === "cursor" || target === "claude") {
-        targets.add(target as SupportedTarget);
-      }
+    for (const target of pkg.config.config.targets.agents) {
+      targets.add(target);
     }
   }
 
@@ -306,16 +267,12 @@ async function installWorkspacesPackages(
     path: string;
     success: boolean;
     error?: Error;
-    installedRuleCount: number;
-    installedCommandCount: number;
-    installedAssetCount: number;
+    installedInstructionCount: number;
     installedHookCount: number;
     installedSkillCount: number;
     installedAgentCount: number;
   }>;
-  totalRuleCount: number;
-  totalCommandCount: number;
-  totalAssetCount: number;
+  totalInstructionCount: number;
   totalHookCount: number;
   totalSkillCount: number;
   totalAgentCount: number;
@@ -324,16 +281,12 @@ async function installWorkspacesPackages(
     path: string;
     success: boolean;
     error?: Error;
-    installedRuleCount: number;
-    installedCommandCount: number;
-    installedAssetCount: number;
+    installedInstructionCount: number;
     installedHookCount: number;
     installedSkillCount: number;
     installedAgentCount: number;
   }> = [];
-  let totalRuleCount = 0;
-  let totalCommandCount = 0;
-  let totalAssetCount = 0;
+  let totalInstructionCount = 0;
   let totalHookCount = 0;
   let totalSkillCount = 0;
   let totalAgentCount = 0;
@@ -349,9 +302,7 @@ async function installWorkspacesPackages(
         config: pkg.config,
       });
 
-      totalRuleCount += result.installedRuleCount;
-      totalCommandCount += result.installedCommandCount;
-      totalAssetCount += result.installedAssetCount;
+      totalInstructionCount += result.installedInstructionCount;
       totalHookCount += result.installedHookCount;
       totalSkillCount += result.installedSkillCount;
       totalAgentCount += result.installedAgentCount;
@@ -360,9 +311,7 @@ async function installWorkspacesPackages(
         path: pkg.relativePath,
         success: result.success,
         error: result.error,
-        installedRuleCount: result.installedRuleCount,
-        installedCommandCount: result.installedCommandCount,
-        installedAssetCount: result.installedAssetCount,
+        installedInstructionCount: result.installedInstructionCount,
         installedHookCount: result.installedHookCount,
         installedSkillCount: result.installedSkillCount,
         installedAgentCount: result.installedAgentCount,
@@ -372,9 +321,7 @@ async function installWorkspacesPackages(
         path: pkg.relativePath,
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
-        installedRuleCount: 0,
-        installedCommandCount: 0,
-        installedAssetCount: 0,
+        installedInstructionCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
         installedAgentCount: 0,
@@ -387,9 +334,7 @@ async function installWorkspacesPackages(
   return {
     success: failedPackages.length === 0,
     packages: results,
-    totalRuleCount,
-    totalCommandCount,
-    totalAssetCount,
+    totalInstructionCount,
     totalHookCount,
     totalSkillCount,
     totalAgentCount,
@@ -397,7 +342,7 @@ async function installWorkspacesPackages(
 }
 
 /**
- * Install rules across multiple packages in a workspace
+ * Install instructions across multiple packages in a workspace
  */
 export async function installWorkspaces(
   cwd: string,
@@ -420,23 +365,21 @@ export async function installWorkspaces(
       const isRoot = pkg.relativePath === ".";
       if (!isRoot) return true;
 
-      // For root directories, only keep if it has rules, commands, skills, agents, or presets
-      const hasRules = pkg.config.rules && pkg.config.rules.length > 0;
-      const hasCommands = pkg.config.commands && pkg.config.commands.length > 0;
+      // For root directories, only keep if it has instructions, skills, agents, or presets
+      const hasInstructions =
+        pkg.config.instructions && pkg.config.instructions.length > 0;
       const hasSkills = pkg.config.skills && pkg.config.skills.length > 0;
       const hasAgents = pkg.config.agents && pkg.config.agents.length > 0;
       const hasPresets =
         pkg.config.config.presets && pkg.config.config.presets.length > 0;
-      return hasRules || hasCommands || hasSkills || hasAgents || hasPresets;
+      return hasInstructions || hasSkills || hasAgents || hasPresets;
     });
 
     if (packages.length === 0) {
       return {
         success: false,
         error: new Error("No packages with aicm configurations found"),
-        installedRuleCount: 0,
-        installedCommandCount: 0,
-        installedAssetCount: 0,
+        installedInstructionCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
         installedAgentCount: 0,
@@ -463,28 +406,20 @@ export async function installWorkspaces(
       dryRun,
     });
 
-    const workspaceCommands = mergeWorkspaceCommands(packages);
-    const workspaceCommandTargets = collectWorkspaceCommandTargets(packages);
-
-    if (workspaceCommands.length > 0) {
-      warnPresetCommandCollisions(workspaceCommands);
-    }
+    const workspaceInstructions = mergeWorkspaceInstructions(packages);
+    const workspaceInstructionTargets =
+      collectWorkspaceInstructionTargets(packages);
 
     if (
       !dryRun &&
-      workspaceCommands.length > 0 &&
-      workspaceCommandTargets.length > 0
+      workspaceInstructions.length > 0 &&
+      workspaceInstructionTargets.length > 0
     ) {
-      const dedupedWorkspaceCommands =
-        dedupeCommandsForInstall(workspaceCommands);
-
-      // Collect all assets from packages
-      const allAssets = packages.flatMap((pkg) => pkg.config.assets ?? []);
-
-      // Copy assets to root
-      writeAssetsToTargets(allAssets, workspaceCommandTargets);
-
-      writeCommandsToTargets(dedupedWorkspaceCommands, workspaceCommandTargets);
+      writeInstructionsToTargets(
+        workspaceInstructions,
+        workspaceInstructionTargets,
+        cwd,
+      );
     }
 
     // Merge and write skills for workspace
@@ -501,7 +436,7 @@ export async function installWorkspaces(
       workspaceSkillTargets.length > 0
     ) {
       const dedupedWorkspaceSkills = dedupeSkillsForInstall(workspaceSkills);
-      writeSkillsToTargets(dedupedWorkspaceSkills, workspaceSkillTargets);
+      writeSkillsToTargets(dedupedWorkspaceSkills, workspaceSkillTargets, cwd);
     }
 
     // Merge and write agents for workspace
@@ -518,18 +453,24 @@ export async function installWorkspaces(
       workspaceAgentTargets.length > 0
     ) {
       const dedupedWorkspaceAgents = dedupeAgentsForInstall(workspaceAgents);
-      writeAgentsToTargets(dedupedWorkspaceAgents, workspaceAgentTargets);
+      writeAgentsToTargets(dedupedWorkspaceAgents, workspaceAgentTargets, cwd);
     }
 
     const { merged: rootMcp, conflicts } = mergeWorkspaceMcpServers(packages);
+    const mcpTargets = new Set<string>();
+    for (const pkg of packages) {
+      for (const target of pkg.config.config.targets.mcp) {
+        mcpTargets.add(target);
+      }
+    }
 
-    const hasCursorTarget = packages.some((p) =>
-      p.config.config.targets.includes("cursor"),
-    );
-
-    if (!dryRun && hasCursorTarget && Object.keys(rootMcp).length > 0) {
-      const mcpPath = path.join(cwd, ".cursor", "mcp.json");
-      writeMcpServersToFile(rootMcp, mcpPath);
+    if (!dryRun && mcpTargets.size > 0 && Object.keys(rootMcp).length > 0) {
+      for (const target of mcpTargets) {
+        const mcpPath = path.isAbsolute(target)
+          ? target
+          : path.join(cwd, target);
+        writeMcpServersToFile(rootMcp, mcpPath);
+      }
     }
 
     for (const conflict of conflicts) {
@@ -543,23 +484,36 @@ export async function installWorkspaces(
       mergeWorkspaceHooks(packages);
 
     const hasHooks = rootHooks.hooks && Object.keys(rootHooks.hooks).length > 0;
+    const hookTargets = new Set<string>();
+    for (const pkg of packages) {
+      for (const target of pkg.config.config.targets.hooks) {
+        hookTargets.add(target);
+      }
+    }
 
-    if (!dryRun && hasCursorTarget && (hasHooks || rootHookFiles.length > 0)) {
+    const hasCursorHooksTarget = Array.from(hookTargets).some((target) => {
+      const resolved = path.isAbsolute(target)
+        ? target
+        : path.join(cwd, target);
+      return path.basename(resolved) === ".cursor";
+    });
+
+    if (
+      !dryRun &&
+      hasCursorHooksTarget &&
+      (hasHooks || rootHookFiles.length > 0)
+    ) {
       writeHooksToCursor(rootHooks, rootHookFiles, cwd);
     }
 
     if (verbose) {
       result.packages.forEach((pkg) => {
         if (pkg.success) {
-          const summaryParts = [`${pkg.installedRuleCount} rules`];
-
-          if (pkg.installedCommandCount > 0) {
-            summaryParts.push(
-              `${pkg.installedCommandCount} command${
-                pkg.installedCommandCount === 1 ? "" : "s"
-              }`,
-            );
-          }
+          const summaryParts = [
+            `${pkg.installedInstructionCount} instruction${
+              pkg.installedInstructionCount === 1 ? "" : "s"
+            }`,
+          ];
 
           if (pkg.installedHookCount > 0) {
             summaryParts.push(
@@ -599,38 +553,43 @@ export async function installWorkspaces(
     if (failedPackages.length > 0) {
       console.log(chalk.yellow(`Installation completed with errors`));
       if (verbose) {
-        const commandSummary =
-          result.totalCommandCount > 0
-            ? `, ${result.totalCommandCount} command${
-                result.totalCommandCount === 1 ? "" : "s"
-              } total`
-            : "";
-        const hookSummary =
-          result.totalHookCount > 0
-            ? `, ${result.totalHookCount} hook${
-                result.totalHookCount === 1 ? "" : "s"
-              } total`
-            : "";
-        const skillSummary =
-          result.totalSkillCount > 0
-            ? `, ${result.totalSkillCount} skill${
-                result.totalSkillCount === 1 ? "" : "s"
-              } total`
-            : "";
-        const agentSummary =
-          result.totalAgentCount > 0
-            ? `, ${result.totalAgentCount} agent${
-                result.totalAgentCount === 1 ? "" : "s"
-              } total`
-            : "";
+        const summaryParts: string[] = [];
+        if (result.totalInstructionCount > 0) {
+          summaryParts.push(
+            `${result.totalInstructionCount} instruction${
+              result.totalInstructionCount === 1 ? "" : "s"
+            } total`,
+          );
+        }
+        if (result.totalHookCount > 0) {
+          summaryParts.push(
+            `${result.totalHookCount} hook${
+              result.totalHookCount === 1 ? "" : "s"
+            } total`,
+          );
+        }
+        if (result.totalSkillCount > 0) {
+          summaryParts.push(
+            `${result.totalSkillCount} skill${
+              result.totalSkillCount === 1 ? "" : "s"
+            } total`,
+          );
+        }
+        if (result.totalAgentCount > 0) {
+          summaryParts.push(
+            `${result.totalAgentCount} agent${
+              result.totalAgentCount === 1 ? "" : "s"
+            } total`,
+          );
+        }
+        const summaryText =
+          summaryParts.length > 0 ? ` (${summaryParts.join(", ")})` : "";
 
         console.log(
           chalk.green(
             `Successfully installed: ${
               result.packages.length - failedPackages.length
-            }/${result.packages.length} packages (${result.totalRuleCount} rule${
-              result.totalRuleCount === 1 ? "" : "s"
-            } total${commandSummary}${hookSummary}${skillSummary}${agentSummary})`,
+            }/${result.packages.length} packages${summaryText}`,
           ),
         );
         console.log(
@@ -649,9 +608,7 @@ export async function installWorkspaces(
         error: new Error(
           `Package installation failed for ${failedPackages.length} package(s): ${errorDetails}`,
         ),
-        installedRuleCount: result.totalRuleCount,
-        installedCommandCount: result.totalCommandCount,
-        installedAssetCount: result.totalAssetCount,
+        installedInstructionCount: result.totalInstructionCount,
         installedHookCount: result.totalHookCount,
         installedSkillCount: result.totalSkillCount,
         installedAgentCount: result.totalAgentCount,
@@ -661,9 +618,7 @@ export async function installWorkspaces(
 
     return {
       success: true,
-      installedRuleCount: result.totalRuleCount,
-      installedCommandCount: result.totalCommandCount,
-      installedAssetCount: result.totalAssetCount,
+      installedInstructionCount: result.totalInstructionCount,
       installedHookCount: result.totalHookCount,
       installedSkillCount: result.totalSkillCount,
       installedAgentCount: result.totalAgentCount,

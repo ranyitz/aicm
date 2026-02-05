@@ -328,7 +328,18 @@ export async function runNpmInstall(
 
   try {
     const command = `npm install --no-save ${packageName}`;
-    const { stdout, stderr } = await execPromise(command, { cwd: workingDir });
+    // Strip pnpm-specific npm_config_ env vars to avoid "Unknown env config" warnings
+    const cleanEnv = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) =>
+          !key.toLowerCase().startsWith("npm_config_") ||
+          key === "npm_config_user_agent",
+      ),
+    );
+    const { stdout, stderr } = await execPromise(command, {
+      cwd: workingDir,
+      env: cleanEnv,
+    });
     return { stdout, stderr, code: 0 };
   } catch (error: unknown) {
     const execError = error as ExecError;

@@ -1,19 +1,19 @@
 import { setupFromFixture, runCommand, runCommandRaw } from "./helpers";
 
-test("should list all rules in the config", async () => {
+test("should list all instructions in the config", async () => {
   await setupFromFixture("list-multiple-rules");
 
   const { stdout } = await runCommand("list");
 
-  expect(stdout).toContain("rule1");
-  expect(stdout).toContain("rule2");
-  expect(stdout).toContain("rule3");
+  expect(stdout).toContain("instruction1");
+  expect(stdout).toContain("instruction2");
+  expect(stdout).toContain("instruction3");
 });
 
-test("should show message when no rules exist", async () => {
+test("should show message when no instructions exist", async () => {
   await setupFromFixture("list-no-rules");
 
   const { stdout, stderr } = await runCommandRaw("list");
 
-  expect(stdout + stderr).toMatch(/no rules|empty|not found/i);
+  expect(stdout + stderr).toMatch(/no instructions|empty|not found/i);
 });

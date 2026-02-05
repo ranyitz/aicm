@@ -1,6 +1,13 @@
 {
   "rootDir": "./",
-  "targets": ["codex"],
+  "instructions": "INSTRUCTIONS.md",
+  "targets": {
+    "skills": [".agents/skills"],
+    "agents": [".agents/agents"],
+    "instructions": ["AGENTS.md"],
+    "mcp": [".mcp.json"],
+    "hooks": [".cursor"]
+  },
   "mcpServers": {
     "backend-mcp": {
       "command": "./scripts/backend.sh"

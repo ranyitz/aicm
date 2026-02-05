@@ -1,4 +1,4 @@
 {
   "rootDir": "./preset-rules",
-  "targets": ["cursor"]
+  "instructions": "instructions/"
 }

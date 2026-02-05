@@ -3,15 +3,10 @@ import fs from "fs-extra";
 import path from "node:path";
 import {
   loadConfig,
-  extractNamespaceFromPresetPath,
   ResolvedConfig,
-  RuleFile,
-  CommandFile,
-  AssetFile,
   SkillFile,
   AgentFile,
   MCPServers,
-  SupportedTarget,
   detectWorkspacesFromPackageJson,
 } from "../utils/config";
 import {
@@ -23,10 +18,10 @@ import {
 import { withWorkingDirectory } from "../utils/working-directory";
 import { isCIEnvironment } from "../utils/is-ci";
 import {
-  parseRuleFrontmatter,
-  generateRulesFileContent,
-  writeRulesFile,
-} from "../utils/rules-file-writer";
+  InstructionFile,
+  extractInstructionTitle,
+} from "../utils/instructions";
+import { writeInstructionsFile } from "../utils/instructions-file";
 import { installWorkspaces } from "./install-workspaces";
 
 export interface InstallOptions {
@@ -65,17 +60,9 @@ export interface InstallResult {
    */
   error?: Error;
   /**
-   * Number of rules installed
+   * Number of instructions installed
    */
-  installedRuleCount: number;
-  /**
-   * Number of commands installed
-   */
-  installedCommandCount: number;
-  /**
-   * Number of assets installed
-   */
-  installedAssetCount: number;
+  installedInstructionCount: number;
   /**
    * Number of hooks installed
    */
@@ -94,276 +81,103 @@ export interface InstallResult {
   packagesCount: number;
 }
 
-/**
- * Rewrite asset references from source paths to installation paths
- * Only rewrites the ../assets/ pattern - everything else is preserved
- *
- * @param content - The file content to rewrite
- * @param presetName - The preset name if this file is from a preset
- * @param fileInstallDepth - The depth of the file's installation directory relative to .cursor/
- *                           For example: .cursor/commands/aicm/file.md has depth 2 (commands, aicm)
- *                                       .cursor/rules/aicm/preset/file.mdc has depth 3 (rules, aicm, preset)
- */
-function rewriteAssetReferences(
-  content: string,
-  presetName?: string,
-  fileInstallDepth: number = 2,
-): string {
-  // Calculate the relative path from the file to .cursor/assets/aicm/
-  // We need to go up fileInstallDepth levels to reach .cursor/, then down to assets/aicm/
-  const upLevels = "../".repeat(fileInstallDepth);
-
-  // If this is from a preset, include the preset namespace in the asset path
-  let assetBasePath = "assets/aicm/";
-  if (presetName) {
-    const namespace = extractNamespaceFromPresetPath(presetName);
-    assetBasePath = path.posix.join("assets", "aicm", ...namespace) + "/";
-  }
-
-  const targetPath = upLevels + assetBasePath;
-
-  // Replace ../assets/ with the calculated target path
-  // Handles both forward slashes and backslashes for cross-platform compatibility
-  return content.replace(/\.\.[\\/]assets[\\/]/g, targetPath);
+function resolveTargetPath(targetPath: string, cwd: string): string {
+  return path.isAbsolute(targetPath)
+    ? targetPath
+    : path.resolve(cwd, targetPath);
 }
 
-function getTargetPaths(): Record<string, string> {
-  const projectDir = process.cwd();
+function formatPresetLabel(presetName?: string): string | null {
+  if (!presetName) return null;
+  if (presetName.startsWith("@")) return presetName;
+  const normalized = presetName.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? presetName;
+}
+
+function buildInstructionsContent(instructions: InstructionFile[]): {
+  content: string;
+  progressiveFiles: Array<{ relativePath: string; content: string }>;
+} {
+  const lines: string[] = [];
+  const progressive: Array<{
+    title: string;
+    description: string;
+    relativePath: string;
+    content: string;
+  }> = [];
+
+  let currentPreset: string | null = null;
+
+  for (const instruction of instructions) {
+    const presetLabel = formatPresetLabel(instruction.presetName);
+    if (presetLabel !== currentPreset) {
+      if (lines.length > 0) lines.push("");
+      if (presetLabel) {
+        lines.push(`<!-- From: ${presetLabel} -->`);
+      }
+      currentPreset = presetLabel;
+    }
+
+    if (instruction.inline) {
+      lines.push(instruction.content.trim());
+    } else {
+      const title =
+        extractInstructionTitle(instruction.content) ?? instruction.name;
+      const relativePath = path.posix.join(
+        ".agents",
+        "aicm",
+        `${instruction.name}.md`,
+      );
+      progressive.push({
+        title,
+        description: instruction.description,
+        relativePath,
+        content: instruction.content,
+      });
+    }
+  }
+
+  if (progressive.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("The following instructions are available:");
+    for (const item of progressive) {
+      lines.push(
+        `- [${item.title}](${item.relativePath}): ${item.description}`,
+      );
+    }
+  }
 
   return {
-    cursor: path.join(projectDir, ".cursor", "rules", "aicm"),
-    assetsAicm: path.join(projectDir, ".cursor", "assets", "aicm"),
-    aicm: path.join(projectDir, ".aicm"),
+    content: lines.join("\n").trim(),
+    progressiveFiles: progressive.map((item) => ({
+      relativePath: item.relativePath,
+      content: item.content,
+    })),
   };
 }
 
-function writeCursorRules(rules: RuleFile[], cursorRulesDir: string): void {
-  fs.emptyDirSync(cursorRulesDir);
-
-  for (const rule of rules) {
-    let rulePath;
-
-    const ruleNameParts = rule.name.split(path.sep).filter(Boolean);
-
-    if (rule.presetName) {
-      // For rules from presets, create a namespaced directory structure
-      const namespace = extractNamespaceFromPresetPath(rule.presetName);
-      // Path will be: cursorRulesDir/namespace/rule-name.mdc
-      rulePath = path.join(cursorRulesDir, ...namespace, ...ruleNameParts);
-    } else {
-      // For local rules, maintain the original flat structure
-      rulePath = path.join(cursorRulesDir, ...ruleNameParts);
-    }
-
-    const ruleFile = rulePath + ".mdc";
-    fs.ensureDirSync(path.dirname(ruleFile));
-
-    // Calculate the depth for asset path rewriting
-    // cursorRulesDir is .cursor/rules/aicm (depth 2 from .cursor)
-    // Add namespace depth if present
-    let fileInstallDepth = 2; // rules, aicm
-    if (rule.presetName) {
-      const namespace = extractNamespaceFromPresetPath(rule.presetName);
-      fileInstallDepth += namespace.length;
-    }
-    // Add any subdirectories in the rule name
-    fileInstallDepth += ruleNameParts.length - 1; // -1 because the last part is the filename
-
-    // Rewrite asset references before writing
-    const content = rewriteAssetReferences(
-      rule.content,
-      rule.presetName,
-      fileInstallDepth,
-    );
-    fs.writeFileSync(ruleFile, content);
-  }
-}
-
-function writeCursorCommands(
-  commands: CommandFile[],
-  cursorCommandsDir: string,
+export function writeInstructionsToTargets(
+  instructions: InstructionFile[],
+  targetFiles: string[],
+  cwd: string,
 ): void {
-  fs.removeSync(cursorCommandsDir);
+  if (instructions.length === 0) return;
 
-  for (const command of commands) {
-    const commandNameParts = command.name
-      .replace(/\\/g, "/")
-      .split("/")
-      .filter(Boolean);
-    const commandPath = path.join(cursorCommandsDir, ...commandNameParts);
-    const commandFile = commandPath + ".md";
-    fs.ensureDirSync(path.dirname(commandFile));
+  const { content, progressiveFiles } = buildInstructionsContent(instructions);
+  if (!content) return;
 
-    // Calculate the depth for asset path rewriting
-    // cursorCommandsDir is .cursor/commands/aicm (depth 2 from .cursor)
-    // Commands are NOT namespaced by preset, but we still need to account for subdirectories
-    let fileInstallDepth = 2; // commands, aicm
-    // Add any subdirectories in the command name
-    fileInstallDepth += commandNameParts.length - 1; // -1 because the last part is the filename
-
-    // Rewrite asset references before writing
-    const content = rewriteAssetReferences(
-      command.content,
-      command.presetName,
-      fileInstallDepth,
-    );
-    fs.writeFileSync(commandFile, content);
-  }
-}
-
-/**
- * Write rules to a shared directory and update the given rules file
- */
-function writeRulesForFile(
-  rules: RuleFile[],
-  assets: AssetFile[],
-  ruleDir: string,
-  rulesFile: string,
-): void {
-  fs.emptyDirSync(ruleDir);
-
-  const ruleFiles = rules.map((rule) => {
-    let rulePath;
-
-    const ruleNameParts = rule.name.split(path.sep).filter(Boolean);
-
-    if (rule.presetName) {
-      // For rules from presets, create a namespaced directory structure
-      const namespace = extractNamespaceFromPresetPath(rule.presetName);
-      // Path will be: ruleDir/namespace/rule-name.md
-      rulePath = path.join(ruleDir, ...namespace, ...ruleNameParts);
-    } else {
-      // For local rules, maintain the original flat structure
-      rulePath = path.join(ruleDir, ...ruleNameParts);
-    }
-
-    // For windsurf/codex/claude, assets are installed at the same namespace level as rules
-    // Example: .aicm/my-preset/rule.md and .aicm/my-preset/asset.json
-    // So we need to remove the 'assets/' part from the path
-    // ../assets/file.json -> ../file.json
-    // ../../assets/file.json -> ../../file.json
-    const content = rule.content.replace(/(\.\.[/\\])assets[/\\]/g, "$1");
-
-    const physicalRulePath = rulePath + ".md";
-    fs.ensureDirSync(path.dirname(physicalRulePath));
-    fs.writeFileSync(physicalRulePath, content);
-
-    const relativeRuleDir = path.basename(ruleDir);
-
-    // For the rules file, maintain the same structure
-    let windsurfPath;
-    if (rule.presetName) {
-      const namespace = extractNamespaceFromPresetPath(rule.presetName);
-      windsurfPath =
-        path.join(relativeRuleDir, ...namespace, ...ruleNameParts) + ".md";
-    } else {
-      windsurfPath = path.join(relativeRuleDir, ...ruleNameParts) + ".md";
-    }
-
-    // Normalize to POSIX style for cross-platform compatibility
-    const windsurfPathPosix = windsurfPath.replace(/\\/g, "/");
-
-    return {
-      name: rule.name,
-      path: windsurfPathPosix,
-      metadata: parseRuleFrontmatter(content),
-    };
-  });
-
-  const rulesContent = generateRulesFileContent(ruleFiles);
-  writeRulesFile(rulesContent, path.join(process.cwd(), rulesFile));
-}
-
-export function writeAssetsToTargets(
-  assets: AssetFile[],
-  targets: SupportedTarget[],
-): void {
-  const targetPaths = getTargetPaths();
-
-  for (const target of targets) {
-    let targetDir: string;
-
-    switch (target) {
-      case "cursor":
-        targetDir = targetPaths.assetsAicm;
-        break;
-      case "windsurf":
-      case "codex":
-      case "claude":
-        targetDir = targetPaths.aicm;
-        break;
-      default:
-        continue;
-    }
-
-    for (const asset of assets) {
-      let assetPath;
-      if (asset.presetName) {
-        const namespace = extractNamespaceFromPresetPath(asset.presetName);
-        assetPath = path.join(targetDir, ...namespace, asset.name);
-      } else {
-        assetPath = path.join(targetDir, asset.name);
-      }
-
-      fs.ensureDirSync(path.dirname(assetPath));
-      fs.writeFileSync(assetPath, asset.content);
-    }
-  }
-}
-
-/**
- * Write all collected rules to their respective IDE targets
- */
-function writeRulesToTargets(
-  rules: RuleFile[],
-  assets: AssetFile[],
-  targets: SupportedTarget[],
-): void {
-  const targetPaths = getTargetPaths();
-
-  for (const target of targets) {
-    switch (target) {
-      case "cursor":
-        if (rules.length > 0) {
-          writeCursorRules(rules, targetPaths.cursor);
-        }
-        break;
-      case "windsurf":
-        if (rules.length > 0) {
-          writeRulesForFile(rules, assets, targetPaths.aicm, ".windsurfrules");
-        }
-        break;
-      case "codex":
-        if (rules.length > 0) {
-          writeRulesForFile(rules, assets, targetPaths.aicm, "AGENTS.md");
-        }
-        break;
-      case "claude":
-        if (rules.length > 0) {
-          writeRulesForFile(rules, assets, targetPaths.aicm, "CLAUDE.md");
-        }
-        break;
-    }
+  for (const targetFile of targetFiles) {
+    const resolvedPath = resolveTargetPath(targetFile, cwd);
+    writeInstructionsFile(content, resolvedPath);
   }
 
-  // Write assets after rules so they don't get wiped by emptyDirSync
-  writeAssetsToTargets(assets, targets);
-}
-
-export function writeCommandsToTargets(
-  commands: CommandFile[],
-  targets: SupportedTarget[],
-): void {
-  const projectDir = process.cwd();
-  const cursorRoot = path.join(projectDir, ".cursor");
-
-  for (const target of targets) {
-    if (target === "cursor") {
-      const commandsDir = path.join(cursorRoot, "commands", "aicm");
-
-      writeCursorCommands(commands, commandsDir);
+  if (progressiveFiles.length > 0) {
+    for (const file of progressiveFiles) {
+      const resolvedPath = resolveTargetPath(file.relativePath, cwd);
+      fs.ensureDirSync(path.dirname(resolvedPath));
+      fs.writeFileSync(resolvedPath, file.content);
     }
-    // Other targets do not support commands yet
   }
 }
 
@@ -374,28 +188,6 @@ export function writeCommandsToTargets(
 interface SkillAicmMetadata {
   source: "local" | "preset";
   presetName?: string;
-}
-
-/**
- * Get the skills installation path for a target
- * Returns null for targets that don't support skills
- */
-function getSkillsTargetPath(target: SupportedTarget): string | null {
-  const projectDir = process.cwd();
-
-  switch (target) {
-    case "cursor":
-      return path.join(projectDir, ".cursor", "skills");
-    case "claude":
-      return path.join(projectDir, ".claude", "skills");
-    case "codex":
-      return path.join(projectDir, ".codex", "skills");
-    case "windsurf":
-      // Windsurf does not support skills
-      return null;
-    default:
-      return null;
-  }
 }
 
 /**
@@ -432,23 +224,16 @@ function writeSkillToTarget(skill: SkillFile, targetSkillsDir: string): void {
  */
 export function writeSkillsToTargets(
   skills: SkillFile[],
-  targets: SupportedTarget[],
+  targetDirs: string[],
+  cwd: string,
 ): void {
   if (skills.length === 0) return;
 
-  for (const target of targets) {
-    const targetSkillsDir = getSkillsTargetPath(target);
-
-    if (!targetSkillsDir) {
-      // Target doesn't support skills
-      continue;
-    }
-
-    // Ensure the skills directory exists
-    fs.ensureDirSync(targetSkillsDir);
-
+  for (const targetDir of targetDirs) {
+    const resolvedDir = resolveTargetPath(targetDir, cwd);
+    fs.ensureDirSync(resolvedDir);
     for (const skill of skills) {
-      writeSkillToTarget(skill, targetSkillsDir);
+      writeSkillToTarget(skill, resolvedDir);
     }
   }
 }
@@ -501,27 +286,6 @@ export function dedupeSkillsForInstall(skills: SkillFile[]): SkillFile[] {
 }
 
 /**
- * Get the agents installation path for a target
- * Returns null for targets that don't support agents
- */
-function getAgentsTargetPath(target: SupportedTarget): string | null {
-  const projectDir = process.cwd();
-
-  switch (target) {
-    case "cursor":
-      return path.join(projectDir, ".cursor", "agents");
-    case "claude":
-      return path.join(projectDir, ".claude", "agents");
-    case "codex":
-    case "windsurf":
-      // Codex and Windsurf do not support agents
-      return null;
-    default:
-      return null;
-  }
-}
-
-/**
  * Metadata file written to the agents directory to track aicm-managed agents
  */
 interface AgentsAicmMetadata {
@@ -535,19 +299,13 @@ interface AgentsAicmMetadata {
  */
 export function writeAgentsToTargets(
   agents: AgentFile[],
-  targets: SupportedTarget[],
+  targetDirs: string[],
+  cwd: string,
 ): void {
   if (agents.length === 0) return;
 
-  for (const target of targets) {
-    const targetAgentsDir = getAgentsTargetPath(target);
-
-    if (!targetAgentsDir) {
-      // Target doesn't support agents
-      continue;
-    }
-
-    // Ensure the agents directory exists
+  for (const targetDir of targetDirs) {
+    const targetAgentsDir = resolveTargetPath(targetDir, cwd);
     fs.ensureDirSync(targetAgentsDir);
 
     // Read existing metadata to clean up old managed agents
@@ -643,65 +401,19 @@ export function dedupeAgentsForInstall(agents: AgentFile[]): AgentFile[] {
   return Array.from(unique.values());
 }
 
-export function warnPresetCommandCollisions(commands: CommandFile[]): void {
-  const collisions = new Map<
-    string,
-    { presets: Set<string>; lastPreset: string }
-  >();
-
-  for (const command of commands) {
-    if (!command.presetName) continue;
-
-    const entry = collisions.get(command.name);
-    if (entry) {
-      entry.presets.add(command.presetName);
-      entry.lastPreset = command.presetName;
-    } else {
-      collisions.set(command.name, {
-        presets: new Set([command.presetName]),
-        lastPreset: command.presetName,
-      });
-    }
-  }
-
-  for (const [commandName, { presets, lastPreset }] of collisions) {
-    if (presets.size > 1) {
-      const presetList = Array.from(presets).sort().join(", ");
-      console.warn(
-        chalk.yellow(
-          `Warning: multiple presets provide the "${commandName}" command (${presetList}). Using definition from ${lastPreset}.`,
-        ),
-      );
-    }
-  }
-}
-
-export function dedupeCommandsForInstall(
-  commands: CommandFile[],
-): CommandFile[] {
-  const unique = new Map<string, CommandFile>();
-  for (const command of commands) {
-    unique.set(command.name, command);
-  }
-  return Array.from(unique.values());
-}
-
 /**
  * Write MCP servers configuration to IDE targets
  */
 function writeMcpServersToTargets(
   mcpServers: MCPServers,
-  targets: SupportedTarget[],
+  targets: string[],
   cwd: string,
 ): void {
   if (!mcpServers || Object.keys(mcpServers).length === 0) return;
 
   for (const target of targets) {
-    if (target === "cursor") {
-      const mcpPath = path.join(cwd, ".cursor", "mcp.json");
-      writeMcpServersToFile(mcpServers, mcpPath);
-    }
-    // Windsurf and Codex do not support project mcpServers, so skip
+    const mcpPath = resolveTargetPath(target, cwd);
+    writeMcpServersToFile(mcpServers, mcpPath);
   }
 }
 
@@ -711,7 +423,7 @@ function writeMcpServersToTargets(
 function writeHooksToTargets(
   hooksConfig: HooksJson,
   hookFiles: HookFile[],
-  targets: SupportedTarget[],
+  targets: string[],
   cwd: string,
 ): void {
   const hasHooks =
@@ -722,10 +434,10 @@ function writeHooksToTargets(
   }
 
   for (const target of targets) {
-    if (target === "cursor") {
-      writeHooksToCursor(hooksConfig, hookFiles, cwd);
+    const targetPath = resolveTargetPath(target, cwd);
+    if (path.basename(targetPath) === ".cursor") {
+      writeHooksToCursor(hooksConfig, hookFiles, path.dirname(targetPath));
     }
-    // Other targets do not support hooks yet
   }
 }
 
@@ -781,7 +493,7 @@ export function writeMcpServersToFile(
 }
 
 /**
- * Install rules for a single package (used within workspaces and standalone installs)
+ * Install instructions for a single package (used within workspaces and standalone installs)
  */
 export async function installPackage(
   options: InstallOptions = {},
@@ -801,9 +513,7 @@ export async function installPackage(
       return {
         success: false,
         error: new Error("Configuration file not found"),
-        installedRuleCount: 0,
-        installedCommandCount: 0,
-        installedAssetCount: 0,
+        installedInstructionCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
         installedAgentCount: 0,
@@ -813,9 +523,7 @@ export async function installPackage(
 
     const {
       config,
-      rules,
-      commands,
-      assets,
+      instructions,
       skills,
       agents,
       mcpServers,
@@ -826,18 +534,13 @@ export async function installPackage(
     if (config.skipInstall === true) {
       return {
         success: true,
-        installedRuleCount: 0,
-        installedCommandCount: 0,
-        installedAssetCount: 0,
+        installedInstructionCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
         installedAgentCount: 0,
         packagesCount: 0,
       };
     }
-
-    warnPresetCommandCollisions(commands);
-    const commandsToInstall = dedupeCommandsForInstall(commands);
 
     warnPresetSkillCollisions(skills);
     const skillsToInstall = dedupeSkillsForInstall(skills);
@@ -847,44 +550,30 @@ export async function installPackage(
 
     try {
       if (!options.dryRun) {
-        writeRulesToTargets(rules, assets, config.targets as SupportedTarget[]);
-
-        writeCommandsToTargets(
-          commandsToInstall,
-          config.targets as SupportedTarget[],
+        writeInstructionsToTargets(
+          instructions,
+          config.targets.instructions,
+          cwd,
         );
 
-        writeSkillsToTargets(
-          skillsToInstall,
-          config.targets as SupportedTarget[],
-        );
+        writeSkillsToTargets(skillsToInstall, config.targets.skills, cwd);
 
-        writeAgentsToTargets(
-          agentsToInstall,
-          config.targets as SupportedTarget[],
-        );
+        writeAgentsToTargets(agentsToInstall, config.targets.agents, cwd);
 
         if (mcpServers && Object.keys(mcpServers).length > 0) {
-          writeMcpServersToTargets(
-            mcpServers,
-            config.targets as SupportedTarget[],
-            cwd,
-          );
+          writeMcpServersToTargets(mcpServers, config.targets.mcp, cwd);
         }
 
         if (hooks && (countHooks(hooks) > 0 || hookFiles.length > 0)) {
-          writeHooksToTargets(
-            hooks,
-            hookFiles,
-            config.targets as SupportedTarget[],
-            cwd,
-          );
+          writeHooksToTargets(hooks, hookFiles, config.targets.hooks, cwd);
         }
       }
 
-      const uniqueRuleCount = new Set(rules.map((rule) => rule.name)).size;
-      const uniqueCommandCount = new Set(
-        commandsToInstall.map((command) => command.name),
+      const uniqueInstructionCount = new Set(
+        instructions.map(
+          (instruction) =>
+            `${instruction.presetName ?? "local"}::${instruction.name}`,
+        ),
       ).size;
       const uniqueHookCount = countHooks(hooks);
       const uniqueSkillCount = skillsToInstall.length;
@@ -892,9 +581,7 @@ export async function installPackage(
 
       return {
         success: true,
-        installedRuleCount: uniqueRuleCount,
-        installedCommandCount: uniqueCommandCount,
-        installedAssetCount: assets.length,
+        installedInstructionCount: uniqueInstructionCount,
         installedHookCount: uniqueHookCount,
         installedSkillCount: uniqueSkillCount,
         installedAgentCount: uniqueAgentCount,
@@ -904,9 +591,7 @@ export async function installPackage(
       return {
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
-        installedRuleCount: 0,
-        installedCommandCount: 0,
-        installedAssetCount: 0,
+        installedInstructionCount: 0,
         installedHookCount: 0,
         installedSkillCount: 0,
         installedAgentCount: 0,
@@ -917,7 +602,7 @@ export async function installPackage(
 }
 
 /**
- * Core implementation of the rule installation logic
+ * Core implementation of the instruction installation logic
  */
 export async function install(
   options: InstallOptions = {},
@@ -931,9 +616,7 @@ export async function install(
 
     return {
       success: true,
-      installedRuleCount: 0,
-      installedCommandCount: 0,
-      installedAssetCount: 0,
+      installedInstructionCount: 0,
       installedHookCount: 0,
       installedSkillCount: 0,
       installedAgentCount: 0,
@@ -980,16 +663,13 @@ export async function installCommand(
   if (!result.success) {
     throw result.error ?? new Error("Installation failed with unknown error");
   } else {
-    const ruleCount = result.installedRuleCount;
-    const commandCount = result.installedCommandCount;
+    const instructionCount = result.installedInstructionCount;
     const hookCount = result.installedHookCount;
     const skillCount = result.installedSkillCount;
     const agentCount = result.installedAgentCount;
-    const ruleMessage =
-      ruleCount > 0 ? `${ruleCount} rule${ruleCount === 1 ? "" : "s"}` : null;
-    const commandMessage =
-      commandCount > 0
-        ? `${commandCount} command${commandCount === 1 ? "" : "s"}`
+    const instructionMessage =
+      instructionCount > 0
+        ? `${instructionCount} instruction${instructionCount === 1 ? "" : "s"}`
         : null;
     const hookMessage =
       hookCount > 0 ? `${hookCount} hook${hookCount === 1 ? "" : "s"}` : null;
@@ -1002,11 +682,8 @@ export async function installCommand(
         ? `${agentCount} agent${agentCount === 1 ? "" : "s"}`
         : null;
     const countsParts: string[] = [];
-    if (ruleMessage) {
-      countsParts.push(ruleMessage);
-    }
-    if (commandMessage) {
-      countsParts.push(commandMessage);
+    if (instructionMessage) {
+      countsParts.push(instructionMessage);
     }
     if (hookMessage) {
       countsParts.push(hookMessage);
@@ -1020,7 +697,7 @@ export async function installCommand(
     const countsMessage =
       countsParts.length > 0
         ? countsParts.join(", ").replace(/, ([^,]*)$/, " and $1")
-        : "0 rules";
+        : "0 instructions";
 
     if (dryRun) {
       if (result.packagesCount > 1) {
@@ -1031,13 +708,12 @@ export async function installCommand(
         console.log(`Dry run: validated ${countsMessage}`);
       }
     } else if (
-      ruleCount === 0 &&
-      commandCount === 0 &&
+      instructionCount === 0 &&
       hookCount === 0 &&
       skillCount === 0 &&
       agentCount === 0
     ) {
-      console.log("No rules, commands, hooks, skills, or agents installed");
+      console.log("No instructions, hooks, skills, or agents installed");
     } else if (result.packagesCount > 1) {
       console.log(
         `Successfully installed ${countsMessage} across ${result.packagesCount} packages`,

@@ -1,8 +1,0 @@
----
-description:
-globs:
-alwaysApply: false
----
-# Test Rule for Multiple Targets
-
-This rule should be installed for both Cursor and Windsurf.

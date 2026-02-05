@@ -1,8 +1,0 @@
----
-description:
-globs:
-alwaysApply: false
----
-# Rule 3
-
-This is a test rule in a subdirectory for configuration.

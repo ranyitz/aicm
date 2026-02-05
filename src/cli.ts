@@ -79,8 +79,8 @@ ${chalk.bold("USAGE")}
 
 ${chalk.bold("COMMANDS")}
   init                Initialize a new aicm configuration file
-  install             Install rules from configured sources
-  list                List all configured rules and their status
+  install             Install instructions from configured sources
+  list                List all configured instructions and their status
   clean               Remove all files and directories created by aicm
 
 ${chalk.bold("OPTIONS")}

@@ -1,6 +1,12 @@
 {
   "rootDir": "./",
-  "targets": ["cursor"],
+  "targets": {
+    "skills": [".agents/skills"],
+    "agents": [".agents/agents"],
+    "instructions": ["AGENTS.md"],
+    "mcp": [".cursor/mcp.json"],
+    "hooks": [".cursor"]
+  },
   "rules": {
     "missing-rule": "./rules/does-not-exist.mdc"
   }

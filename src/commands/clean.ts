@@ -3,7 +3,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import { checkWorkspacesEnabled } from "../utils/config";
 import { withWorkingDirectory } from "../utils/working-directory";
-import { removeRulesBlock } from "../utils/rules-file-writer";
+import { removeInstructionsBlock } from "../utils/instructions-file";
 import { discoverPackagesWithAicm } from "../utils/workspace-discovery";
 
 export interface CleanOptions {
@@ -36,12 +36,12 @@ function cleanFile(filePath: string, verbose: boolean): boolean {
   }
 }
 
-function cleanRulesBlock(filePath: string, verbose: boolean): boolean {
+function cleanInstructionsBlock(filePath: string, verbose: boolean): boolean {
   if (!fs.existsSync(filePath)) return false;
 
   try {
     const content = fs.readFileSync(filePath, "utf8");
-    const cleanedContent = removeRulesBlock(content);
+    const cleanedContent = removeInstructionsBlock(content);
 
     if (content === cleanedContent) return false;
 
@@ -51,7 +51,9 @@ function cleanRulesBlock(filePath: string, verbose: boolean): boolean {
     } else {
       fs.writeFileSync(filePath, cleanedContent);
       if (verbose)
-        console.log(chalk.gray(`  Cleaned rules block from ${filePath}`));
+        console.log(
+          chalk.gray(`  Cleaned instructions block from ${filePath}`),
+        );
     }
     return true;
   } catch {
@@ -61,51 +63,58 @@ function cleanRulesBlock(filePath: string, verbose: boolean): boolean {
 }
 
 function cleanMcpServers(cwd: string, verbose: boolean): boolean {
-  const mcpPath = path.join(cwd, ".cursor", "mcp.json");
-  if (!fs.existsSync(mcpPath)) return false;
+  const mcpPaths = [
+    path.join(cwd, ".cursor", "mcp.json"),
+    path.join(cwd, ".mcp.json"),
+  ];
+  let cleanedAny = false;
 
-  try {
-    const content = fs.readJsonSync(mcpPath);
-    const mcpServers = content.mcpServers;
+  for (const mcpPath of mcpPaths) {
+    if (!fs.existsSync(mcpPath)) continue;
 
-    if (!mcpServers) return false;
+    try {
+      const content = fs.readJsonSync(mcpPath);
+      const mcpServers = content.mcpServers;
 
-    let hasChanges = false;
-    const newMcpServers: Record<string, unknown> = {};
+      if (!mcpServers) continue;
 
-    for (const [key, value] of Object.entries(mcpServers)) {
-      if (
-        typeof value === "object" &&
-        value !== null &&
-        "aicm" in value &&
-        value.aicm === true
-      ) {
-        hasChanges = true;
-      } else {
-        newMcpServers[key] = value;
+      let hasChanges = false;
+      const newMcpServers: Record<string, unknown> = {};
+
+      for (const [key, value] of Object.entries(mcpServers)) {
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          "aicm" in value &&
+          value.aicm === true
+        ) {
+          hasChanges = true;
+        } else {
+          newMcpServers[key] = value;
+        }
       }
-    }
 
-    if (!hasChanges) return false;
+      if (!hasChanges) continue;
 
-    // If no servers remain and no other properties, remove the file
-    if (
-      Object.keys(newMcpServers).length === 0 &&
-      Object.keys(content).length === 1
-    ) {
-      fs.removeSync(mcpPath);
-      if (verbose) console.log(chalk.gray(`  Removed empty ${mcpPath}`));
-    } else {
-      content.mcpServers = newMcpServers;
-      fs.writeJsonSync(mcpPath, content, { spaces: 2 });
-      if (verbose)
-        console.log(chalk.gray(`  Cleaned aicm MCP servers from ${mcpPath}`));
+      if (
+        Object.keys(newMcpServers).length === 0 &&
+        Object.keys(content).length === 1
+      ) {
+        fs.removeSync(mcpPath);
+        if (verbose) console.log(chalk.gray(`  Removed empty ${mcpPath}`));
+      } else {
+        content.mcpServers = newMcpServers;
+        fs.writeJsonSync(mcpPath, content, { spaces: 2 });
+        if (verbose)
+          console.log(chalk.gray(`  Cleaned aicm MCP servers from ${mcpPath}`));
+      }
+      cleanedAny = true;
+    } catch {
+      console.warn(chalk.yellow(`Warning: Failed to clean MCP servers`));
     }
-    return true;
-  } catch {
-    console.warn(chalk.yellow(`Warning: Failed to clean MCP servers`));
-    return false;
   }
+
+  return cleanedAny;
 }
 
 function cleanHooks(cwd: string, verbose: boolean): boolean {
@@ -188,9 +197,9 @@ function cleanSkills(cwd: string, verbose: boolean): number {
 
   // Skills directories for each target
   const skillsDirs = [
+    path.join(cwd, ".agents", "skills"),
     path.join(cwd, ".cursor", "skills"),
     path.join(cwd, ".claude", "skills"),
-    path.join(cwd, ".codex", "skills"),
   ];
 
   for (const skillsDir of skillsDirs) {
@@ -253,6 +262,7 @@ function cleanAgents(cwd: string, verbose: boolean): number {
 
   // Agents directories for each target
   const agentsDirs = [
+    path.join(cwd, ".agents", "agents"),
     path.join(cwd, ".cursor", "agents"),
     path.join(cwd, ".claude", "agents"),
   ];
@@ -318,18 +328,17 @@ function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
   let cleanedCount = 0;
 
   const dirsToCheck = [
-    path.join(cwd, ".cursor", "rules"),
-    path.join(cwd, ".cursor", "commands"),
-    path.join(cwd, ".cursor", "assets"),
     path.join(cwd, ".cursor", "hooks"),
     path.join(cwd, ".cursor", "skills"),
     path.join(cwd, ".cursor", "agents"),
     path.join(cwd, ".cursor"),
+    path.join(cwd, ".agents", "skills"),
+    path.join(cwd, ".agents", "agents"),
+    path.join(cwd, ".agents", "aicm"),
+    path.join(cwd, ".agents"),
     path.join(cwd, ".claude", "skills"),
     path.join(cwd, ".claude", "agents"),
     path.join(cwd, ".claude"),
-    path.join(cwd, ".codex", "skills"),
-    path.join(cwd, ".codex"),
   ];
 
   for (const dir of dirsToCheck) {
@@ -360,15 +369,9 @@ export async function cleanPackage(
   return withWorkingDirectory(cwd, async () => {
     let cleanedCount = 0;
 
-    const filesToClean = [
-      path.join(cwd, ".cursor", "rules", "aicm"),
-      path.join(cwd, ".cursor", "commands", "aicm"),
-      path.join(cwd, ".cursor", "assets", "aicm"),
-      path.join(cwd, ".aicm"),
-    ];
+    const filesToClean = [path.join(cwd, ".agents", "aicm")];
 
-    const rulesFilesToClean = [
-      path.join(cwd, ".windsurfrules"),
+    const instructionsFilesToClean = [
       path.join(cwd, "AGENTS.md"),
       path.join(cwd, "CLAUDE.md"),
     ];
@@ -378,9 +381,9 @@ export async function cleanPackage(
       if (cleanFile(file, verbose)) cleanedCount++;
     }
 
-    // Clean rules blocks from files
-    for (const file of rulesFilesToClean) {
-      if (cleanRulesBlock(file, verbose)) cleanedCount++;
+    // Clean instructions blocks from files
+    for (const file of instructionsFilesToClean) {
+      if (cleanInstructionsBlock(file, verbose)) cleanedCount++;
     }
 
     // Clean MCP servers
@@ -434,7 +437,7 @@ export async function cleanWorkspaces(
     totalCleaned += result.cleanedCount;
   }
 
-  // Always clean root directory (for merged artifacts like mcp.json and commands)
+  // Always clean root directory (for merged artifacts like mcp.json)
   const rootPackage = packages.find((p) => p.absolutePath === cwd);
   if (!rootPackage) {
     if (verbose)

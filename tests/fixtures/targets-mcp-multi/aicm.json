@@ -1,0 +1,16 @@
+{
+  "rootDir": "./",
+  "instructions": "INSTRUCTIONS.md",
+  "targets": {
+    "skills": [".agents/skills"],
+    "agents": [".agents/agents"],
+    "instructions": ["AGENTS.md"],
+    "mcp": [".cursor/mcp.json", ".mcp.json"],
+    "hooks": [".cursor"]
+  },
+  "mcpServers": {
+    "multi-target-mcp": {
+      "command": "./scripts/mcp.sh"
+    }
+  }
+}

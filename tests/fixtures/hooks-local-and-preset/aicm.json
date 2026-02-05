@@ -1,5 +1,11 @@
 {
   "rootDir": "./",
   "presets": ["./preset"],
-  "targets": ["cursor"]
+  "targets": {
+    "skills": [".agents/skills"],
+    "agents": [".agents/agents"],
+    "instructions": ["AGENTS.md"],
+    "mcp": [".cursor/mcp.json"],
+    "hooks": [".cursor"]
+  }
 }

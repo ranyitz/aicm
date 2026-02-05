@@ -1,5 +1,11 @@
 {
   "rootDir": "./",
   "workspaces": true,
-  "targets": ["codex"]
+  "targets": {
+    "skills": [".agents/skills"],
+    "agents": [".agents/agents"],
+    "instructions": ["AGENTS.md"],
+    "mcp": [".mcp.json"],
+    "hooks": [".cursor"]
+  }
 }

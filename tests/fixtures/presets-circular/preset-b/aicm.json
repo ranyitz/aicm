@@ -1,4 +1,5 @@
 {
   "rootDir": "./",
+  "instructions": "instructions/",
   "presets": ["../preset-a"]
 }

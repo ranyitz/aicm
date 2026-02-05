@@ -11,22 +11,16 @@ dist/
 *.iml
 
 # cursor
-.cursor
-!tests/fixtures/*/.cursor/
+/.cursor/*
+!/.cursor/plans/
 
-# windsurf
-.windsurfrules
-!tests/fixtures/*/.windsurfrules
-
-# codex
+# aicm generated files
 AGENTS.md
 !tests/fixtures/*/AGENTS.md
-
-# claude
 CLAUDE.md
 !tests/fixtures/*/CLAUDE.md
-
-# aicm
+.agents
+!tests/fixtures/*/.agents
 .aicm
 !tests/fixtures/*/.aicm
 
