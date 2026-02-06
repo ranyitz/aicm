@@ -64,7 +64,7 @@ describe("git clone operations", () => {
       const { bareUrl, cleanup } = await createBareGitRepo({
         "aicm.json": JSON.stringify({
           rootDir: "./",
-          instructions: "instructions/",
+          instructions: "instructions",
         }),
         "instructions/general.md":
           "---\ndescription: General rules\ninline: true\n---\nBe helpful.",
@@ -160,13 +160,13 @@ describe("git clone operations", () => {
       const { bareUrl, cleanup } = await createBareGitRepo({
         "packages/preset-a/aicm.json": JSON.stringify({
           rootDir: "./",
-          instructions: "instructions/",
+          instructions: "instructions",
         }),
         "packages/preset-a/instructions/rule-a.md":
           "---\ndescription: Rule A\ninline: true\n---\nRule A content",
         "packages/preset-b/aicm.json": JSON.stringify({
           rootDir: "./",
-          instructions: "instructions/",
+          instructions: "instructions",
         }),
         "packages/preset-b/instructions/rule-b.md":
           "---\ndescription: Rule B\ninline: true\n---\nRule B content",

@@ -1,5 +1,5 @@
 {
   "rootDir": "./",
-  "instructions": "instructions/",
+  "instructions": "instructions",
   "targets": ["cursor"]
 }

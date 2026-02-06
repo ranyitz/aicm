@@ -21,7 +21,7 @@ test("should create default config file", async () => {
   const config = JSON.parse(readTestFile("aicm.json"));
   expect(config).toEqual({
     rootDir: "./",
-    instructions: "instructions/",
+    instructions: "instructions",
     targets: ["cursor", "claude-code"],
   });
 });

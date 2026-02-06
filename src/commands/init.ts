@@ -5,7 +5,7 @@ import { log } from "../utils/log";
 
 const DEFAULT_CONFIG = {
   rootDir: "./",
-  instructions: "instructions/",
+  instructions: "instructions",
   targets: ["cursor", "claude-code"],
 };
 

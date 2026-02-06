@@ -1,6 +1,6 @@
 {
   "rootDir": "./",
-  "instructions": "instructions/",
+  "instructions": "instructions",
   "targets": ["cursor", "codex"],
   "mcpServers": {
     "test-mcp": {

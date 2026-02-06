@@ -121,7 +121,7 @@ Assets have been removed. If you had shared files in `assets/`:
 ```json
 {
   "rootDir": "./",
-  "instructions": "instructions/",
+  "instructions": "instructions",
   "targets": {
     "skills": [".agents/skills"],
     "agents": [".agents/agents"],
@@ -138,7 +138,7 @@ Assets have been removed. If you had shared files in `assets/`:
 
 **Key changes:**
 
-- Add `"instructions": "instructions/"` (path to your instructions source, relative to `rootDir`)
+- Add `"instructions": "instructions"` (path to your instructions source, relative to `rootDir`)
 - Replace `"targets": ["cursor"]` with a `targets` object specifying arrays of paths
 - All target values are arrays, allowing multi-target installation
 
@@ -205,7 +205,7 @@ If you maintain an aicm preset package:
 1. Rename `rules/` to `instructions/`
 2. Convert `.mdc` files to `.md` with updated frontmatter
 3. Remove `commands/` and `assets/` directories
-4. Add `"instructions": "instructions/"` to the preset's `aicm.json`
+4. Add `"instructions": "instructions"` to the preset's `aicm.json`
 5. Remove `"targets"` from the preset (targets are only used in consumer configs)
 
 ### 9. Clean and Reinstall

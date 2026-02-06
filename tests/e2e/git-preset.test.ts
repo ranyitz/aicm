@@ -84,7 +84,7 @@ describe("full e2e: aicm install with GitHub preset", () => {
     const { bareUrl, cleanup } = await createBareGitRepo({
       "aicm.json": JSON.stringify({
         rootDir: "./",
-        instructions: "instructions/",
+        instructions: "instructions",
       }),
       "instructions/best-practices.md":
         "---\ndescription: Best practices from GitHub preset\ninline: true\n---\nAlways write tests.",

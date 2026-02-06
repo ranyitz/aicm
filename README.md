@@ -16,7 +16,7 @@ A CLI tool for managing AI agent configurations across projects.
 - [Features](#features)
   - [Instructions](#instructions)
   - [Skills](#skills)
-  - [Agents](#agents)
+  - [Subagents](#subagents)
   - [Hooks](#hooks)
   - [MCP Servers](#mcp-servers)
 - [Workspaces Support](#workspaces-support)
@@ -32,58 +32,68 @@ Modern AI-powered IDEs like Cursor and agents like Claude Code allow developers 
 
 **aicm** enables **"Write Once, Use Everywhere"** for your AI configurations.
 
-- **Team Consistency:** Ensure every developer on your team uses the same instructions and best practices.
-- **Reusable Presets:** Bundle your instructions, skills, and MCP configurations into npm packages (e.g., `@company/ai-preset`) to share them across your organization.
-- **Multi-Target Support:** Write instructions once and install them to `AGENTS.md`, `CLAUDE.md`, and other target locations.
+- **Team Consistency:** Ensure every developer on your team can use the same instructions and best practices across different projects.
+- **Reusable Presets:** Bundle your instructions, skills, and MCP configurations into presets to share them across projects.
+- **Multi-Target Support:** Write once and install in multiple coding agent configurations.
 
 ## Supported Environments
 
-aicm writes instructions to standard markdown files that work across AI tools:
+| Preset        | Environment | Instructions | Skills            | Subagents           | MCP                  | Hooks      |
+| ------------- | ----------- | ------------ | ----------------- | ------------------- | -------------------- | ---------- |
+| `cursor`      | Cursor IDE  | `AGENTS.md`  | `.agents/skills/` | `.cursor/agents/`   | `.cursor/mcp.json`   | `.cursor/` |
+| `claude-code` | Claude Code | `CLAUDE.md`  | `.claude/skills/` | `.claude/agents/`   | `.mcp.json`          | `.claude/` |
+| `opencode`    | OpenCode    | `AGENTS.md`  | `.agents/skills/` | `.opencode/agents/` | `opencode.json`      | —          |
+| `codex`       | Codex CLI   | `AGENTS.md`  | `.agents/skills/` | —                   | `.codex/config.toml` | —          |
 
-| Target        | Installation                                                                           |
-| ------------- | -------------------------------------------------------------------------------------- |
-| **AGENTS.md** | Inlines instructions into `AGENTS.md` (works with Cursor, Codex, and other agents)     |
-| **CLAUDE.md** | Inlines instructions into `CLAUDE.md` (works with Claude Code)                         |
-| **MCP**       | Configures `.cursor/mcp.json` and/or `.mcp.json` for MCP servers                       |
-| **Skills**    | Copies skill directories to `.agents/skills/`, `.cursor/skills/`, or `.claude/skills/` |
-| **Agents**    | Copies agent definitions to `.agents/agents/`, `.cursor/agents/`, or `.claude/agents/` |
-| **Hooks**     | Configures `.cursor/hooks.json` for Cursor agent hooks                                 |
+By default, aicm targets both `cursor` and `claude-code`. You can customize this with the `targets` field:
+
+```json
+{
+  "targets": ["cursor", "claude-code", "opencode", "codex"]
+}
+```
 
 ## Getting Started
 
-The easiest way to get started with aicm is by using **presets** - npm packages containing instructions and MCP configurations that you can install in any project.
+### Quick Start
 
-### Demo
-
-We'll install [an npm package](https://github.com/ranyitz/pirate-coding) containing a simple "Pirate Coding" preset to demonstrate how aicm works.
-
-1. **Install the demo preset package**:
+1. **Initialize aicm** in your project:
 
 ```bash
-npm install --save-dev pirate-coding
+npx aicm init
 ```
 
-2. **Create an `aicm.json` file** in your project:
+This creates an `aicm.json` config and a starter `instructions/` directory.
 
-```bash
-echo '{ "presets": ["pirate-coding"] }' > aicm.json
+2. **Edit `instructions/general.md`** with your project's conventions:
+
+```markdown
+---
+description: Project coding standards
+inline: true
+---
+
+## Coding Standards
+
+- Use TypeScript strict mode
+- Write tests for all new features
+- Use meaningful variable names
 ```
 
-3. **Install all instructions and MCPs from your configuration**:
+3. **Install the instructions** into your project so the coding agent can use them:
 
 ```bash
 npx aicm install
 ```
 
-After installation, open your AI-powered IDE and start coding. Your AI assistant will follow the instructions from the preset.
+Your instructions are now written to `AGENTS.md` and `CLAUDE.md`, ready for Cursor, Claude Code to use them.
 
 ### Creating a Preset
 
-1. **Create an npm package** with the following structure:
+A preset is a repository (or npm package) containing an `aicm.json` and the resources it references:
 
 ```
-@team/ai-preset/
-├── package.json
+my-ai-preset/
 ├── aicm.json
 ├── instructions/      # Instruction files (.md)
 │   ├── typescript.md
@@ -96,43 +106,61 @@ After installation, open your AI-powered IDE and start coding. Your AI assistant
 └── hooks.json         # Hook configuration [optional]
 ```
 
-2. **Configure the preset's `aicm.json`**:
+Configure the preset's `aicm.json`:
 
 ```json
 {
   "rootDir": "./",
-  "instructions": "instructions/",
+  "instructions": "instructions",
   "mcpServers": {
     "my-mcp": { "url": "https://example.com/sse" }
   }
 }
 ```
 
-3. **Publish the package** and use it in your project's `aicm.json`:
+Push the repository to GitHub and reference it in any project's `aicm.json`:
 
 ```json
-{ "presets": ["@team/ai-preset"] }
+{ "presets": ["https://github.com/your-org/my-ai-preset"] }
 ```
-
-> **Note:** This is syntactic sugar for `@team/ai-preset/aicm.json`.
 
 ### Using a Preset
 
-To use a preset in your project:
+Presets can be referenced from three sources:
 
-1. **Install a preset npm package**:
+**GitHub URL**:
+
+```json
+{ "presets": ["https://github.com/your-org/my-ai-preset"] }
+```
+
+You can also point to a specific branch or subdirectory:
+
+```json
+{
+  "presets": [
+    "https://github.com/your-org/mono-repo/tree/main/presets/frontend"
+  ]
+}
+```
+
+**npm package**:
 
 ```bash
 npm install --save-dev @team/ai-preset
 ```
 
-2. **Create an `aicm.json` file** in your project root:
-
 ```json
 { "presets": ["@team/ai-preset"] }
 ```
 
-3. **Add a prepare script** to your `package.json` to ensure configurations are always up to date:
+**Local path**:
+
+```json
+{ "presets": ["./presets/my-preset"] }
+```
+
+After configuring your presets, run `npx aicm install` to install everything. Add a prepare script to keep configurations up to date:
 
 ```json
 {
@@ -142,12 +170,11 @@ npm install --save-dev @team/ai-preset
 }
 ```
 
-The instructions are inlined into `AGENTS.md` and any MCP servers are configured in `.cursor/mcp.json`.
-
 ### Notes
 
-- Generated content in `AGENTS.md` is enclosed in `<!-- AICM:BEGIN -->` / `<!-- AICM:END -->` markers for deterministic cleanup.
-- Users may add `AGENTS.md`, `CLAUDE.md`, `.agents/`, `.cursor/mcp.json`, and `.cursor/hooks/aicm/` to `.gitignore` to avoid tracking generated files.
+- Users may add `**/.cursor/*/aicm/**` and `**/.claude/*/aicm/**` to `.gitignore` to avoid tracking generated files.
+- Certain generated files, like `AGENTS.md` and `CLAUDE.md`, should be committed to your repository. These files may be updated by aicm, which will regenerate their contents (within the special `<!-- AICM:BEGIN -->` and `<!-- AICM:END -->` markers) as needed.
+- GitHub presets are cloned and cached locally. Authentication is resolved from `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token` for private repositories.
 
 ## Features
 
@@ -190,10 +217,7 @@ Configure your `aicm.json`:
 ```json
 {
   "rootDir": "./",
-  "instructions": "instructions/",
-  "targets": {
-    "instructions": ["AGENTS.md"]
-  }
+  "instructions": "instructions"
 }
 ```
 
@@ -275,24 +299,13 @@ Run the extraction script:
 scripts/extract.py
 ```
 
-Configure your `aicm.json`:
-
-```json
-{
-  "rootDir": "./",
-  "targets": {
-    "skills": [".agents/skills"]
-  }
-}
-```
-
-Skills are installed to the directories specified in `targets.skills`. Default: `.agents/skills`.
+Skills are installed to the directories specified by your target presets. With the default targets (`cursor` + `claude-code`), skills are installed to `.agents/skills/` and `.claude/skills/`.
 
 When installed, each skill directory is copied in its entirety (including `scripts/`, `references/`, `assets/` subdirectories). A `.aicm.json` file is added inside each installed skill to track that it's managed by aicm.
 
-### Agents
+### Subagents
 
-aicm supports [Cursor Subagents](https://cursor.com/docs/context/subagents) and [Claude Code Subagents](https://code.claude.com/docs/en/sub-agents) - specialized AI assistants that can be delegated specific tasks. Agents are markdown files with YAML frontmatter.
+aicm supports [Cursor Subagents](https://cursor.com/docs/context/subagents) and [Claude Code Subagents](https://code.claude.com/docs/en/sub-agents)
 
 Create an `agents/` directory in your project (at the `rootDir` location):
 
@@ -306,7 +319,7 @@ my-project/
         └── security-auditor.md
 ```
 
-Each agent file should have YAML frontmatter with at least a `name` and `description`:
+Each subagent file should have YAML frontmatter with at least a `name` and `description`:
 
 ```markdown
 ---
@@ -331,18 +344,7 @@ Review checklist:
 - Proper error handling
 ```
 
-Configure your `aicm.json`:
-
-```json
-{
-  "rootDir": "./",
-  "targets": {
-    "agents": [".agents/agents", ".cursor/agents", ".claude/agents"]
-  }
-}
-```
-
-Agents are installed to the directories specified in `targets.agents`. Default: `.agents/agents`.
+Agents are installed to the directories specified by your target presets. With the default targets (`cursor` + `claude-code`), agents are installed to `.cursor/agents/` and `.claude/agents/`.
 
 A `.aicm.json` metadata file is created in the agents directory to track which agents are managed by aicm. This allows the clean command to remove only aicm-managed agents while preserving any manually created agents.
 
@@ -439,19 +441,7 @@ You can configure MCP servers directly in your `aicm.json`, which is useful for 
 }
 ```
 
-MCP servers are written to the paths specified in `targets.mcp`. Default: `.cursor/mcp.json`.
-
-**Multi-target MCP:** You can write MCP configs to multiple target files:
-
-```json
-{
-  "targets": {
-    "mcp": [".cursor/mcp.json", ".mcp.json"]
-  }
-}
-```
-
-This writes the same MCP server configuration to both Cursor's MCP file and Claude Code's project-level MCP file.
+MCP servers are written to the paths specified by your target presets. With the default targets (`cursor` + `claude-code`), MCP servers are written to both `.cursor/mcp.json` and `.mcp.json`.
 
 ## Workspaces Support
 
@@ -506,7 +496,7 @@ When you have a preset package within your workspace (a package that provides co
 {
   "skipInstall": true,
   "rootDir": "./",
-  "instructions": "instructions/"
+  "instructions": "instructions"
 }
 ```
 
@@ -519,14 +509,8 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 ```json
 {
   "rootDir": "./",
-  "instructions": "instructions/",
-  "targets": {
-    "skills": [".agents/skills"],
-    "agents": [".agents/agents"],
-    "instructions": ["AGENTS.md"],
-    "mcp": [".cursor/mcp.json"],
-    "hooks": [".cursor"]
-  },
+  "instructions": "instructions",
+  "targets": ["cursor", "claude-code"],
   "presets": [],
   "mcpServers": {},
   "skipInstall": false
@@ -537,37 +521,25 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 
 - **rootDir**: Directory containing your aicm structure. Must contain one or more of: `instructions`, `skills/`, `agents/`, or `hooks.json`. If not specified, aicm will only install from presets and will not pick up any local directories.
 - **instructions**: Path to the instructions source (a single `.md` file or a directory containing `.md` files), resolved relative to `rootDir`. Optional - if not set, no instructions are loaded from local files.
-- **targets**: An object specifying where each component type should be installed. Each value is an array of paths.
+- **targets**: An array of target preset names specifying which environments to install into. Default: `["cursor", "claude-code"]`. Available presets: `cursor`, `claude-code`, `opencode`, `codex`.
 - **presets**: List of preset packages or paths to include.
 - **mcpServers**: MCP server configurations.
 - **workspaces**: Set to `true` to enable workspace mode. If not specified, aicm will automatically detect workspaces from your `package.json`.
 - **skipInstall**: Set to `true` to skip installation for this package. Useful for preset packages in workspaces.
 
-### Targets Object
+### Target Presets
 
-Each target is an array of paths where the component should be installed:
+Target presets determine where each component type is installed. See the [Supported Environments](#supported-environments) table for the full mapping of each preset.
 
-| Target Key     | Type       | Default                | Description                        |
-| -------------- | ---------- | ---------------------- | ---------------------------------- |
-| `skills`       | `string[]` | `[".agents/skills"]`   | Directories to install skills into |
-| `agents`       | `string[]` | `[".agents/agents"]`   | Directories to install agents into |
-| `instructions` | `string[]` | `["AGENTS.md"]`        | Files to write instructions into   |
-| `mcp`          | `string[]` | `[".cursor/mcp.json"]` | MCP config files to write to       |
-| `hooks`        | `string[]` | `[".cursor"]`          | Directories for hooks config       |
-
-**Example - Install to both Cursor and Claude locations:**
+**Example - Install to Cursor, Claude Code, and OpenCode:**
 
 ```json
 {
-  "targets": {
-    "skills": [".agents/skills", ".cursor/skills", ".claude/skills"],
-    "agents": [".agents/agents", ".cursor/agents", ".claude/agents"],
-    "instructions": ["AGENTS.md", "CLAUDE.md"],
-    "mcp": [".cursor/mcp.json", ".mcp.json"],
-    "hooks": [".cursor"]
-  }
+  "targets": ["cursor", "claude-code", "opencode"]
 }
 ```
+
+When multiple presets are selected, their paths are merged and deduplicated. For example, the default `["cursor", "claude-code"]` results in instructions being written to both `AGENTS.md` and `CLAUDE.md`, MCP servers to both `.cursor/mcp.json` and `.mcp.json`, etc.
 
 ### Configuration Examples
 
@@ -588,12 +560,9 @@ To combine your own instructions with preset instructions:
 ```json
 {
   "rootDir": "./ai-config",
-  "instructions": "instructions/",
+  "instructions": "instructions",
   "presets": ["@company/ai-preset"],
-  "targets": {
-    "instructions": ["AGENTS.md", "CLAUDE.md"],
-    "mcp": [".cursor/mcp.json", ".mcp.json"]
-  }
+  "targets": ["cursor", "claude-code"]
 }
 ```
 
@@ -659,6 +628,10 @@ Removes all files, directories, and changes made by aicm.
 ```bash
 npx aicm clean
 ```
+
+Options:
+
+- `--verbose`: Show detailed output of what's being cleaned
 
 ### `list`
 
