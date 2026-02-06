@@ -41,7 +41,7 @@ describe("instructions installation", () => {
     expect(stdout).toContain("Successfully installed 2 instructions");
 
     const agentsContent = readTestFile("AGENTS.md");
-    expect(agentsContent).toContain(
+    expect(agentsContent).not.toContain(
       "The following instructions are available:",
     );
     expect(agentsContent).toContain(
@@ -53,7 +53,7 @@ describe("instructions installation", () => {
     expect(readTestFile(referencedPath)).toContain("Testing Instructions");
   });
 
-  test("writes instructions to multiple targets", async () => {
+  test("writes instructions to AGENTS.md and creates CLAUDE.md pointer when both targets active", async () => {
     await setupFromFixture("instructions-multitarget");
 
     const { stdout, code } = await runCommand("install --ci");
@@ -61,8 +61,15 @@ describe("instructions installation", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("Successfully installed 1 instruction");
 
+    // AGENTS.md should have the full instructions
     expect(fileExists("AGENTS.md")).toBe(true);
+    const agentsContent = readTestFile("AGENTS.md");
+    expect(agentsContent).toContain("<!-- AICM:BEGIN -->");
+
+    // CLAUDE.md should be created with @AGENTS.md pointer
     expect(fileExists("CLAUDE.md")).toBe(true);
+    const claudeContent = readTestFile("CLAUDE.md");
+    expect(claudeContent.trim()).toBe("@AGENTS.md");
   });
 
   test("merges instructions from multiple presets with separators", async () => {

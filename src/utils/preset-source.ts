@@ -2,58 +2,47 @@
  * Preset source detection and GitHub URL parsing.
  *
  * Classifies a preset string into one of three source types:
- *   - "github"  – full GitHub URL (https://github.com/…)
- *   - "local"   – filesystem path (relative or absolute)
- *   - "npm"     – npm package name (everything else)
+ *   - "github" -- full GitHub URL (https://github.com/...)
+ *   - "local"  -- filesystem path (relative or absolute)
+ *   - "npm"    -- npm package name (everything else)
  */
 
-type PresetSourceType = "github" | "local" | "npm";
-
-interface PresetSource {
-  type: PresetSourceType;
-  /** The raw preset string exactly as it appeared in aicm.json */
-  raw: string;
-}
-
-export interface GitHubPresetSource extends PresetSource {
+export interface GitHubPresetSource {
   type: "github";
+  raw: string;
   owner: string;
   repo: string;
-  /** Branch or tag (from /tree/<ref>/…). undefined = default branch. */
   ref?: string;
-  /** Sub-directory within the repo (from /tree/<ref>/<subpath>). */
   subpath?: string;
-  /** Clone URL: https://github.com/<owner>/<repo>.git */
   cloneUrl: string;
 }
 
-export interface LocalPresetSource extends PresetSource {
+interface LocalPresetSource {
   type: "local";
+  raw: string;
 }
 
-export interface NpmPresetSource extends PresetSource {
+interface NpmPresetSource {
   type: "npm";
+  raw: string;
 }
+
+export type PresetSource =
+  | GitHubPresetSource
+  | LocalPresetSource
+  | NpmPresetSource;
 
 const GITHUB_URL_PREFIX = "https://github.com/";
-
-/**
- * Windows drive-letter pattern: C:\ or D:/
- */
 const WINDOWS_DRIVE_RE = /^[a-zA-Z]:[/\\]/;
 
 /**
  * Classify a preset string into a source type.
  */
-export function parsePresetSource(
-  input: string,
-): GitHubPresetSource | LocalPresetSource | NpmPresetSource {
-  // 1. GitHub full URL
+export function parsePresetSource(input: string): PresetSource {
   if (input.startsWith(GITHUB_URL_PREFIX)) {
     return parseGitHubUrl(input);
   }
 
-  // 2. Local path (relative or absolute)
   if (
     input.startsWith(".") ||
     input.startsWith("/") ||
@@ -62,7 +51,6 @@ export function parsePresetSource(
     return { type: "local", raw: input };
   }
 
-  // 3. Everything else is npm
   return { type: "npm", raw: input };
 }
 
@@ -73,18 +61,13 @@ export function parsePresetSource(
  *   https://github.com/owner/repo
  *   https://github.com/owner/repo/tree/ref
  *   https://github.com/owner/repo/tree/ref/sub/path
- *
- * Throws on invalid GitHub URLs.
  */
 export function parseGitHubUrl(input: string): GitHubPresetSource {
   if (!input.startsWith(GITHUB_URL_PREFIX)) {
     throw new Error(`Not a GitHub URL: "${input}"`);
   }
 
-  // Strip the prefix and any trailing slash
   const rest = input.slice(GITHUB_URL_PREFIX.length).replace(/\/+$/, "");
-
-  // Split into segments: owner, repo, [tree, ref, ...subpath]
   const segments = rest.split("/").filter(Boolean);
 
   if (segments.length < 2) {
@@ -97,12 +80,10 @@ export function parseGitHubUrl(input: string): GitHubPresetSource {
   const repo = segments[1];
   const cloneUrl = `https://github.com/${owner}/${repo}.git`;
 
-  // Simple form: https://github.com/owner/repo
   if (segments.length === 2) {
     return { type: "github", raw: input, owner, repo, cloneUrl };
   }
 
-  // Must have /tree/<ref>[/subpath…]
   if (segments[2] !== "tree") {
     throw new Error(
       `Invalid GitHub URL: "${input}". Only /tree/ URLs are supported (e.g. https://github.com/owner/repo/tree/main/path).`,

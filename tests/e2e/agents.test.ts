@@ -7,7 +7,7 @@ import {
 } from "./helpers";
 
 describe("agents installation", () => {
-  test("installs local agents to .agents/agents/", async () => {
+  test("installs local agents to .cursor/agents/", async () => {
     await setupFromFixture("agents-basic");
 
     const { stdout } = await runCommand("install --ci");
@@ -15,14 +15,14 @@ describe("agents installation", () => {
     expect(stdout).toContain("Successfully installed 2 agents");
 
     // Verify agents are installed
-    expect(fileExists(".agents/agents/code-reviewer.md")).toBe(true);
-    expect(fileExists(".agents/agents/debugger.md")).toBe(true);
+    expect(fileExists(".cursor/agents/code-reviewer.md")).toBe(true);
+    expect(fileExists(".cursor/agents/debugger.md")).toBe(true);
 
     // Verify metadata file exists
-    expect(fileExists(".agents/agents/.aicm.json")).toBe(true);
+    expect(fileExists(".cursor/agents/.aicm.json")).toBe(true);
 
     // Verify agent content is preserved
-    const agentContent = readTestFile(".agents/agents/code-reviewer.md");
+    const agentContent = readTestFile(".cursor/agents/code-reviewer.md");
     expect(agentContent).toContain("name: code-reviewer");
     expect(agentContent).toContain(
       "Reviews code for quality and best practices",
@@ -38,10 +38,10 @@ describe("agents installation", () => {
     expect(stdout).toContain("Successfully installed 1 agent");
 
     // Verify agent is installed
-    expect(fileExists(".agents/agents/data-analyst.md")).toBe(true);
+    expect(fileExists(".cursor/agents/data-analyst.md")).toBe(true);
 
     // Verify content
-    const agentContent = readTestFile(".agents/agents/data-analyst.md");
+    const agentContent = readTestFile(".cursor/agents/data-analyst.md");
     expect(agentContent).toContain("name: data-analyst");
     expect(agentContent).toContain("Data analysis expert");
   });
@@ -58,7 +58,7 @@ describe("agents installation", () => {
     expect(stderr).toContain("Using definition from ./preset-b");
 
     // Should use the last preset's version
-    const agentContent = readTestFile(".agents/agents/shared-agent.md");
+    const agentContent = readTestFile(".cursor/agents/shared-agent.md");
     expect(agentContent).toContain("Preset B version");
   });
 
@@ -72,13 +72,13 @@ describe("agents installation", () => {
     );
 
     // Verify root has all agents merged
-    const rootStructure = getDirectoryStructure(".agents/agents");
-    expect(rootStructure).toContain(".agents/agents/agent-a.md");
-    expect(rootStructure).toContain(".agents/agents/agent-b.md");
+    const rootStructure = getDirectoryStructure(".cursor/agents");
+    expect(rootStructure).toContain(".cursor/agents/agent-a.md");
+    expect(rootStructure).toContain(".cursor/agents/agent-b.md");
 
     // Verify each package has its own agents
-    expect(fileExists("package-a/.agents/agents/agent-a.md")).toBe(true);
-    expect(fileExists("package-b/.agents/agents/agent-b.md")).toBe(true);
+    expect(fileExists("package-a/.cursor/agents/agent-a.md")).toBe(true);
+    expect(fileExists("package-b/.cursor/agents/agent-b.md")).toBe(true);
   });
 
   test("installs agents to multiple targets", async () => {
@@ -88,10 +88,9 @@ describe("agents installation", () => {
 
     expect(stdout).toContain("Successfully installed 1 agent");
 
-    // Verify agent is installed to both targets
-    expect(fileExists(".agents/agents/multi-agent.md")).toBe(true);
-    expect(fileExists(".claude/agents/multi-agent.md")).toBe(true);
+    // Verify agent is installed to both targets (cursor + claude-code)
     expect(fileExists(".cursor/agents/multi-agent.md")).toBe(true);
+    expect(fileExists(".claude/agents/multi-agent.md")).toBe(true);
   });
 
   test("clean removes aicm-managed agents", async () => {
@@ -99,16 +98,16 @@ describe("agents installation", () => {
 
     // First install
     await runCommand("install --ci");
-    expect(fileExists(".agents/agents/code-reviewer.md")).toBe(true);
+    expect(fileExists(".cursor/agents/code-reviewer.md")).toBe(true);
 
     // Then clean
     const { stdout } = await runCommand("clean --verbose");
     expect(stdout).toContain("Successfully cleaned");
 
     // Agents should be removed
-    expect(fileExists(".agents/agents/code-reviewer.md")).toBe(false);
-    expect(fileExists(".agents/agents/debugger.md")).toBe(false);
-    expect(fileExists(".agents/agents/.aicm.json")).toBe(false);
+    expect(fileExists(".cursor/agents/code-reviewer.md")).toBe(false);
+    expect(fileExists(".cursor/agents/debugger.md")).toBe(false);
+    expect(fileExists(".cursor/agents/.aicm.json")).toBe(false);
   });
 
   test("clean preserves non-aicm agents", async () => {
@@ -123,7 +122,7 @@ describe("agents installation", () => {
     const { testDir } = await import("./helpers");
     const manualAgentPath = path.join(
       testDir,
-      ".agents/agents/manual-agent.md",
+      ".cursor/agents/manual-agent.md",
     );
     fs.ensureDirSync(path.dirname(manualAgentPath));
     fs.writeFileSync(
@@ -135,10 +134,10 @@ describe("agents installation", () => {
     await runCommand("clean --verbose");
 
     // aicm agents should be removed
-    expect(fileExists(".agents/agents/code-reviewer.md")).toBe(false);
-    expect(fileExists(".agents/agents/debugger.md")).toBe(false);
+    expect(fileExists(".cursor/agents/code-reviewer.md")).toBe(false);
+    expect(fileExists(".cursor/agents/debugger.md")).toBe(false);
 
     // Manual agent should be preserved (not tracked in metadata)
-    expect(fileExists(".agents/agents/manual-agent.md")).toBe(true);
+    expect(fileExists(".cursor/agents/manual-agent.md")).toBe(true);
   });
 });

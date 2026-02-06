@@ -1,0 +1,14 @@
+{
+  "rootDir": "./",
+  "instructions": "instructions/",
+  "targets": ["cursor", "codex"],
+  "mcpServers": {
+    "test-mcp": {
+      "command": "npx",
+      "args": ["-y", "test-mcp-server"],
+      "env": {
+        "TEST_KEY": "test-value"
+      }
+    }
+  }
+}

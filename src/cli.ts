@@ -1,17 +1,15 @@
-#!/usr/bin/env node
-
 import arg from "arg";
 import chalk from "chalk";
 import { initCommand } from "./commands/init";
 import { installCommand } from "./commands/install";
 import { listCommand } from "./commands/list";
 import { cleanCommand } from "./commands/clean";
+import { log } from "./utils/log";
 
-// Define version from package.json
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pkg = require("../package.json");
 
-export async function runCli() {
+export async function runCli(): Promise<void> {
   const args = arg(
     {
       "--help": Boolean,
@@ -28,13 +26,11 @@ export async function runCli() {
     },
   );
 
-  // Show version
   if (args["--version"]) {
-    console.log(pkg.version);
+    log.plain(pkg.version);
     process.exit(0);
   }
 
-  // Show help
   if (args["--help"]) {
     showHelp();
     process.exit(0);
@@ -70,8 +66,8 @@ export async function runCli() {
   }
 }
 
-function showHelp() {
-  console.log(`
+function showHelp(): void {
+  log.plain(`
 ${chalk.bold("aicm")} - A CLI tool for managing AI IDE configurations
 
 ${chalk.bold("USAGE")}
@@ -98,13 +94,13 @@ ${chalk.bold("EXAMPLES")}
 `);
 }
 
-function logError(error: unknown, verbose?: boolean) {
+function logError(error: unknown, verbose?: boolean): void {
   if (error instanceof Error) {
-    console.error(chalk.red(`Error: ${error.message}`));
+    log.error(`Error: ${error.message}`);
     if (verbose && error.stack) {
       console.error(chalk.gray(error.stack));
     }
   } else {
-    console.error(chalk.red(`Error: ${String(error)}`));
+    log.error(`Error: ${String(error)}`);
   }
 }

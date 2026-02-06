@@ -1,11 +1,10 @@
+/**
+ * Instruction file loading and frontmatter parsing.
+ */
+
 import fs from "fs-extra";
 import path from "node:path";
 import fg from "fast-glob";
-
-interface InstructionMetadata {
-  description: string;
-  inline: boolean;
-}
 
 export interface InstructionFile {
   name: string;
@@ -17,9 +16,17 @@ export interface InstructionFile {
   inline: boolean;
 }
 
+interface InstructionMetadata {
+  description: string;
+  inline: boolean;
+}
+
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
-function parseInstructionFrontmatter(content: string): {
+/**
+ * Parse YAML-like frontmatter from an instruction file.
+ */
+function parseFrontmatter(content: string): {
   metadata: InstructionMetadata;
   body: string;
 } {
@@ -58,11 +65,17 @@ function parseInstructionFrontmatter(content: string): {
   };
 }
 
+/**
+ * Extract the first markdown heading from content.
+ */
 export function extractInstructionTitle(content: string): string | null {
   const match = content.match(/^#{1,6}\s+(.+)$/m);
   return match ? match[1].trim() : null;
 }
 
+/**
+ * Load instruction files from a path (file or directory).
+ */
 export async function loadInstructionsFromPath(
   instructionsPath: string,
   source: "local" | "preset",
@@ -88,7 +101,7 @@ export async function loadInstructionsFromPath(
   const instructions: InstructionFile[] = [];
   for (const filePath of files) {
     const content = await fs.readFile(filePath, "utf8");
-    const { metadata, body } = parseInstructionFrontmatter(content);
+    const { metadata, body } = parseFrontmatter(content);
     const baseDir = stats.isFile()
       ? path.dirname(instructionsPath)
       : instructionsPath;

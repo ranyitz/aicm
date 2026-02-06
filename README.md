@@ -217,8 +217,6 @@ Configure your `aicm.json`:
 ```markdown
 <!-- AICM:BEGIN -->
 
-The following instructions are available:
-
 - [TypeScript Conventions](.agents/aicm/typescript.md): TypeScript coding conventions for this project
 
 <!-- AICM:END -->

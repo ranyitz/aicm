@@ -1,10 +1,4 @@
 {
   "rootDir": "./",
-  "targets": {
-    "skills": [".agents/skills", ".claude/skills", ".cursor/skills"],
-    "agents": [".agents/agents"],
-    "instructions": ["AGENTS.md"],
-    "mcp": [".cursor/mcp.json"],
-    "hooks": [".cursor"]
-  }
+  "targets": ["cursor", "claude-code"]
 }

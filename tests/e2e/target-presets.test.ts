@@ -27,7 +27,7 @@ describe("target presets", () => {
     expect(fileExists("CLAUDE.md")).toBe(false);
   });
 
-  test("both presets install to both cursor and claude-code paths", async () => {
+  test("both presets: AGENTS.md gets full content, CLAUDE.md gets pointer", async () => {
     await setupFromFixture("target-presets-both");
 
     const { stdout, code } = await runCommand("install --ci");
@@ -35,59 +35,16 @@ describe("target presets", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("Successfully installed 1 instruction");
 
-    // Instructions should go to both AGENTS.md and CLAUDE.md
+    // Instructions should go to AGENTS.md with full content
     expect(fileExists("AGENTS.md")).toBe(true);
-    expect(fileExists("CLAUDE.md")).toBe(true);
-
     const agentsContent = readTestFile("AGENTS.md");
     expect(agentsContent).toContain("<!-- AICM:BEGIN -->");
     expect(agentsContent).toContain("General Instructions");
 
+    // CLAUDE.md should be created with @AGENTS.md pointer
+    expect(fileExists("CLAUDE.md")).toBe(true);
     const claudeContent = readTestFile("CLAUDE.md");
-    expect(claudeContent).toContain("<!-- AICM:BEGIN -->");
-    expect(claudeContent).toContain("General Instructions");
-  });
-
-  test("presets with overrides replace specific target types", async () => {
-    await setupFromFixture("target-presets-override");
-
-    const { stdout, code } = await runCommand("install --ci");
-
-    expect(code).toBe(0);
-    expect(stdout).toContain("Successfully installed 1 instruction");
-
-    // Instructions should still go to both (from presets, not overridden)
-    expect(fileExists("AGENTS.md")).toBe(true);
-    expect(fileExists("CLAUDE.md")).toBe(true);
-
-    // MCP should go to the overridden paths (3 targets)
-    const cursorMcpPath = path.join(".cursor", "mcp.json");
-    expect(fileExists(cursorMcpPath)).toBe(true);
-    const cursorMcp = JSON.parse(readTestFile(cursorMcpPath));
-    expect(cursorMcp.mcpServers["test-server"]).toBeDefined();
-
-    expect(fileExists(".mcp.json")).toBe(true);
-    const dotMcp = JSON.parse(readTestFile(".mcp.json"));
-    expect(dotMcp.mcpServers["test-server"]).toBeDefined();
-
-    expect(fileExists("extra-mcp.json")).toBe(true);
-    const extraMcp = JSON.parse(readTestFile("extra-mcp.json"));
-    expect(extraMcp.mcpServers["test-server"]).toBeDefined();
-  });
-
-  test("backward compatible fine-grained targets still work", async () => {
-    await setupFromFixture("target-presets-backward-compat");
-
-    const { stdout, code } = await runCommand("install --ci");
-
-    expect(code).toBe(0);
-    expect(stdout).toContain("Successfully installed 1 instruction");
-
-    // Instructions should go to AGENTS.md (from fine-grained targets)
-    expect(fileExists("AGENTS.md")).toBe(true);
-    const agentsContent = readTestFile("AGENTS.md");
-    expect(agentsContent).toContain("<!-- AICM:BEGIN -->");
-    expect(agentsContent).toContain("General Instructions");
+    expect(claudeContent.trim()).toBe("@AGENTS.md");
   });
 
   test("invalid preset name throws error", async () => {

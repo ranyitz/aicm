@@ -40,20 +40,17 @@ tests/fixtures/e2e/list-with-multiple-rules/
 ## Key Principles
 
 1. **Always use fixtures for test state**
-
    - Store initial test state in the `tests/fixtures` directory
    - Create a dedicated fixture directory for each test scenario
    - Include `.gitkeep` files in empty fixture directories
    - **Never** create test files on-the-fly with `fs.writeFileSync()` or similar methods
 
 2. **Fixture Directory Structure**
-
    - Name fixtures descriptively based on test scenario
    - Follow the established pattern in existing fixtures
    - Each fixture should be self-contained and independent
 
 3. **Using Fixtures in Tests**
-
    - Use `setupFromFixture(fixtureName)` to initialize test state
    - Verify fixture content exists before running tests
    - For empty starting states, use the `init-empty` fixture

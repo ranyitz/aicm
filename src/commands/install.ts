@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import fs from "fs-extra";
 import path from "node:path";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import {
   loadConfig,
   ResolvedConfig,
@@ -10,75 +11,37 @@ import {
   detectWorkspacesFromPackageJson,
 } from "../utils/config";
 import {
-  HookFile,
   HooksJson,
+  HookFile,
   countHooks,
   writeHooksToCursor,
   writeHooksToClaudeCode,
 } from "../utils/hooks";
-import { withWorkingDirectory } from "../utils/working-directory";
-import { isCIEnvironment } from "../utils/is-ci";
 import {
   InstructionFile,
   extractInstructionTitle,
 } from "../utils/instructions";
 import { writeInstructionsFile } from "../utils/instructions-file";
+import { withWorkingDirectory } from "../utils/working-directory";
+import { isCIEnvironment } from "../utils/is-ci";
 import { installWorkspaces } from "./install-workspaces";
+import { log } from "../utils/log";
 
 export interface InstallOptions {
-  /**
-   * Base directory to use instead of process.cwd()
-   */
   cwd?: string;
-  /**
-   * Custom config object to use instead of loading from file
-   */
   config?: ResolvedConfig;
-  /**
-   * allow installation on CI environments
-   */
   installOnCI?: boolean;
-  /**
-   * Show verbose output during installation
-   */
   verbose?: boolean;
-  /**
-   * Perform a dry run without writing any files
-   */
   dryRun?: boolean;
 }
 
-/**
- * Result of the install operation
- */
 export interface InstallResult {
-  /**
-   * Whether the operation was successful
-   */
   success: boolean;
-  /**
-   * Error object if the operation failed
-   */
   error?: Error;
-  /**
-   * Number of instructions installed
-   */
   installedInstructionCount: number;
-  /**
-   * Number of hooks installed
-   */
   installedHookCount: number;
-  /**
-   * Number of skills installed
-   */
   installedSkillCount: number;
-  /**
-   * Number of agents installed
-   */
   installedAgentCount: number;
-  /**
-   * Number of packages installed
-   */
   packagesCount: number;
 }
 
@@ -121,6 +84,9 @@ function buildInstructionsContent(instructions: InstructionFile[]): {
     }
 
     if (instruction.inline) {
+      if (lines.length > 0 && lines[lines.length - 1] !== "") {
+        lines.push("");
+      }
       lines.push(instruction.content.trim());
     } else {
       const title =
@@ -141,7 +107,6 @@ function buildInstructionsContent(instructions: InstructionFile[]): {
 
   if (progressive.length > 0) {
     if (lines.length > 0) lines.push("");
-    lines.push("The following instructions are available:");
     for (const item of progressive) {
       lines.push(
         `- [${item.title}](${item.relativePath}): ${item.description}`,
@@ -168,61 +133,243 @@ export function writeInstructionsToTargets(
   const { content, progressiveFiles } = buildInstructionsContent(instructions);
   if (!content) return;
 
+  const hasAgentsMd = targetFiles.includes("AGENTS.md");
+  const hasClaudeMd = targetFiles.includes("CLAUDE.md");
+
   for (const targetFile of targetFiles) {
+    // When both AGENTS.md and CLAUDE.md are targets, only write full content to AGENTS.md
+    // CLAUDE.md gets a pointer (@AGENTS.md) if it doesn't already exist
+    if (hasAgentsMd && hasClaudeMd && targetFile === "CLAUDE.md") {
+      const resolvedPath = resolveTargetPath(targetFile, cwd);
+      if (!fs.existsSync(resolvedPath)) {
+        fs.ensureDirSync(path.dirname(resolvedPath));
+        fs.writeFileSync(resolvedPath, "@AGENTS.md\n");
+      }
+      // If CLAUDE.md already exists, leave it untouched
+      continue;
+    }
+
     const resolvedPath = resolveTargetPath(targetFile, cwd);
     writeInstructionsFile(content, resolvedPath);
   }
 
-  if (progressiveFiles.length > 0) {
-    for (const file of progressiveFiles) {
-      const resolvedPath = resolveTargetPath(file.relativePath, cwd);
-      fs.ensureDirSync(path.dirname(resolvedPath));
-      fs.writeFileSync(resolvedPath, file.content);
+  for (const file of progressiveFiles) {
+    const resolvedPath = resolveTargetPath(file.relativePath, cwd);
+    fs.ensureDirSync(path.dirname(resolvedPath));
+    fs.writeFileSync(resolvedPath, file.content);
+  }
+}
+
+export function writeMcpServersToFile(
+  mcpServers: MCPServers,
+  mcpPath: string,
+): void {
+  fs.ensureDirSync(path.dirname(mcpPath));
+
+  const existingConfig: Record<string, unknown> = fs.existsSync(mcpPath)
+    ? fs.readJsonSync(mcpPath)
+    : {};
+
+  const existingServers =
+    (existingConfig?.mcpServers as Record<string, Record<string, unknown>>) ??
+    {};
+
+  // Keep only user-defined servers (those without aicm: true)
+  const userServers: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(existingServers)) {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      (value as Record<string, unknown>).aicm !== true
+    ) {
+      userServers[key] = value;
+    }
+  }
+
+  // Mark aicm servers and filter out canceled (false) ones
+  const aicmServers: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(mcpServers)) {
+    if (value !== false) {
+      aicmServers[key] = { ...value, aicm: true };
+    }
+  }
+
+  const mergedConfig = {
+    ...existingConfig,
+    mcpServers: { ...userServers, ...aicmServers },
+  };
+
+  fs.writeJsonSync(mcpPath, mergedConfig, { spaces: 2 });
+}
+
+export function writeMcpServersToOpenCode(
+  mcpServers: MCPServers,
+  mcpPath: string,
+): void {
+  fs.ensureDirSync(path.dirname(mcpPath));
+
+  const existingConfig: Record<string, unknown> = fs.existsSync(mcpPath)
+    ? fs.readJsonSync(mcpPath)
+    : {};
+
+  const existingMcp =
+    (existingConfig?.mcp as Record<string, Record<string, unknown>>) ?? {};
+
+  // Keep only user-defined servers (those without aicm marker)
+  const userServers: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(existingMcp)) {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      (value as Record<string, unknown>).aicm !== true
+    ) {
+      userServers[key] = value;
+    }
+  }
+
+  // Convert aicm MCP format to OpenCode format
+  const aicmServers: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(mcpServers)) {
+    if (value === false) continue;
+
+    if (value.url) {
+      aicmServers[key] = {
+        type: "remote",
+        url: value.url,
+        enabled: true,
+        ...(value.env ? { environment: value.env } : {}),
+        aicm: true,
+      };
+    } else if (value.command) {
+      const command = [value.command, ...(value.args || [])];
+      aicmServers[key] = {
+        type: "local",
+        command,
+        enabled: true,
+        ...(value.env ? { environment: value.env } : {}),
+        aicm: true,
+      };
+    }
+  }
+
+  const mergedConfig = {
+    ...existingConfig,
+    mcp: { ...userServers, ...aicmServers },
+  };
+
+  fs.writeJsonSync(mcpPath, mergedConfig, { spaces: 2 });
+}
+
+export function writeMcpServersToCodex(
+  mcpServers: MCPServers,
+  mcpPath: string,
+): void {
+  fs.ensureDirSync(path.dirname(mcpPath));
+
+  // Read existing TOML config
+  let existingConfig: Record<string, unknown> = {};
+  const managedServerNames = new Set<string>();
+  if (fs.existsSync(mcpPath)) {
+    try {
+      const rawContent = fs.readFileSync(mcpPath, "utf8");
+
+      // Detect aicm-managed servers from comment markers
+      const lines = rawContent.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === "# aicm:managed") {
+          const match = lines[i + 1]?.match(/^\[mcp_servers\.("?)(.+)\1\]$/);
+          if (match) managedServerNames.add(match[2]);
+        }
+      }
+
+      existingConfig = parseToml(rawContent) as Record<string, unknown>;
+    } catch {
+      // If we can't parse, start fresh
+      existingConfig = {};
+    }
+  }
+
+  const existingServers =
+    (existingConfig.mcp_servers as Record<string, Record<string, unknown>>) ??
+    {};
+
+  // Keep only user-defined servers (skip comment-marked and legacy aicm:true)
+  const userServers: Record<string, Record<string, unknown>> = {};
+  for (const [key, value] of Object.entries(existingServers)) {
+    if (managedServerNames.has(key)) continue;
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      (value as Record<string, unknown>).aicm === true
+    ) {
+      continue;
+    }
+    userServers[key] = value as Record<string, unknown>;
+  }
+
+  // Convert aicm MCP format to Codex TOML format
+  const aicmNames: string[] = [];
+  const aicmServers: Record<string, Record<string, unknown>> = {};
+  for (const [key, value] of Object.entries(mcpServers)) {
+    if (value === false) continue;
+    aicmNames.push(key);
+
+    if (value.url) {
+      aicmServers[key] = {
+        url: value.url,
+        ...(value.env ? { env: value.env } : {}),
+      };
+    } else if (value.command) {
+      aicmServers[key] = {
+        command: value.command,
+        ...(value.args && value.args.length > 0 ? { args: value.args } : {}),
+        ...(value.env ? { env: value.env } : {}),
+      };
+    }
+  }
+
+  const mergedConfig = {
+    ...existingConfig,
+    mcp_servers: { ...userServers, ...aicmServers },
+  };
+
+  let tomlContent = stringifyToml(mergedConfig);
+
+  // Add comment markers before aicm-managed server sections
+  for (const name of aicmNames) {
+    const bare = `[mcp_servers.${name}]`;
+    const quoted = `[mcp_servers."${name}"]`;
+    if (tomlContent.includes(bare)) {
+      tomlContent = tomlContent.replace(bare, `# aicm:managed\n${bare}`);
+    } else if (tomlContent.includes(quoted)) {
+      tomlContent = tomlContent.replace(quoted, `# aicm:managed\n${quoted}`);
+    }
+  }
+
+  fs.writeFileSync(mcpPath, tomlContent);
+}
+
+function writeMcpServersToTargets(
+  mcpServers: MCPServers,
+  targets: string[],
+  cwd: string,
+): void {
+  if (!mcpServers || Object.keys(mcpServers).length === 0) return;
+  for (const target of targets) {
+    const resolvedPath = resolveTargetPath(target, cwd);
+    const basename = path.basename(target);
+
+    if (basename === "opencode.json") {
+      writeMcpServersToOpenCode(mcpServers, resolvedPath);
+    } else if (target === ".codex/config.toml" || basename === "config.toml") {
+      writeMcpServersToCodex(mcpServers, resolvedPath);
+    } else {
+      // Default: Cursor (.cursor/mcp.json) and Claude Code (.mcp.json) format
+      writeMcpServersToFile(mcpServers, resolvedPath);
     }
   }
 }
 
-/**
- * Metadata file written inside each installed skill to track aicm management
- * The presence of .aicm.json indicates the skill is managed by aicm
- */
-interface SkillAicmMetadata {
-  source: "local" | "preset";
-  presetName?: string;
-}
-
-/**
- * Write a single skill to the target directory
- * Copies the entire skill directory and writes .aicm.json metadata
- */
-function writeSkillToTarget(skill: SkillFile, targetSkillsDir: string): void {
-  const skillTargetPath = path.join(targetSkillsDir, skill.name);
-
-  // Remove existing skill directory if it exists (to ensure clean install)
-  if (fs.existsSync(skillTargetPath)) {
-    fs.removeSync(skillTargetPath);
-  }
-
-  // Copy the entire skill directory
-  fs.copySync(skill.sourcePath, skillTargetPath);
-
-  // Write .aicm.json metadata file
-  // The presence of this file indicates the skill is managed by aicm
-  const metadata: SkillAicmMetadata = {
-    source: skill.source,
-  };
-
-  if (skill.presetName) {
-    metadata.presetName = skill.presetName;
-  }
-
-  const metadataPath = path.join(skillTargetPath, ".aicm.json");
-  fs.writeJsonSync(metadataPath, metadata, { spaces: 2 });
-}
-
-/**
- * Write skills to all supported target directories
- */
 export function writeSkillsToTargets(
   skills: SkillFile[],
   targetDirs: string[],
@@ -234,71 +381,20 @@ export function writeSkillsToTargets(
     const resolvedDir = resolveTargetPath(targetDir, cwd);
     fs.ensureDirSync(resolvedDir);
     for (const skill of skills) {
-      writeSkillToTarget(skill, resolvedDir);
-    }
-  }
-}
+      const skillTargetPath = path.join(resolvedDir, skill.name);
+      if (fs.existsSync(skillTargetPath)) fs.removeSync(skillTargetPath);
+      fs.copySync(skill.sourcePath, skillTargetPath);
 
-/**
- * Warn about skill name collisions from different presets
- */
-export function warnPresetSkillCollisions(skills: SkillFile[]): void {
-  const collisions = new Map<
-    string,
-    { presets: Set<string>; lastPreset: string }
-  >();
-
-  for (const skill of skills) {
-    if (!skill.presetName) continue;
-
-    const entry = collisions.get(skill.name);
-    if (entry) {
-      entry.presets.add(skill.presetName);
-      entry.lastPreset = skill.presetName;
-    } else {
-      collisions.set(skill.name, {
-        presets: new Set([skill.presetName]),
-        lastPreset: skill.presetName,
+      const metadata: Record<string, unknown> = { source: skill.source };
+      if (skill.presetName) metadata.presetName = skill.presetName;
+      fs.writeJsonSync(path.join(skillTargetPath, ".aicm.json"), metadata, {
+        spaces: 2,
       });
     }
   }
-
-  for (const [skillName, { presets, lastPreset }] of collisions) {
-    if (presets.size > 1) {
-      const presetList = Array.from(presets).sort().join(", ");
-      console.warn(
-        chalk.yellow(
-          `Warning: multiple presets provide the "${skillName}" skill (${presetList}). Using definition from ${lastPreset}.`,
-        ),
-      );
-    }
-  }
 }
 
-/**
- * Dedupe skills by name (last one wins)
- */
-export function dedupeSkillsForInstall(skills: SkillFile[]): SkillFile[] {
-  const unique = new Map<string, SkillFile>();
-  for (const skill of skills) {
-    unique.set(skill.name, skill);
-  }
-  return Array.from(unique.values());
-}
-
-/**
- * Metadata file written to the agents directory to track aicm-managed agents
- */
-interface AgentsAicmMetadata {
-  managedAgents: string[]; // List of agent names (without path or extension)
-}
-
-/**
- * Write agents to all supported target directories
- * Similar to skills, agents are written directly to the agents directory
- * with a .aicm.json metadata file tracking which agents are managed
- */
-export function writeAgentsToTargets(
+export function writeSubagentsToTargets(
   agents: AgentFile[],
   targetDirs: string[],
   cwd: string,
@@ -309,130 +405,114 @@ export function writeAgentsToTargets(
     const targetAgentsDir = resolveTargetPath(targetDir, cwd);
     fs.ensureDirSync(targetAgentsDir);
 
-    // Read existing metadata to clean up old managed agents
     const metadataPath = path.join(targetAgentsDir, ".aicm.json");
     if (fs.existsSync(metadataPath)) {
-      try {
-        const existingMetadata: AgentsAicmMetadata =
-          fs.readJsonSync(metadataPath);
-        // Remove previously managed agents
-        for (const agentName of existingMetadata.managedAgents || []) {
-          // Skip invalid names containing path separators
-          if (agentName.includes("/") || agentName.includes("\\")) {
-            console.warn(
-              chalk.yellow(
-                `Warning: Skipping invalid agent name "${agentName}" (contains path separator)`,
-              ),
-            );
-            continue;
-          }
-          const fullPath = path.join(targetAgentsDir, agentName + ".md");
-          if (fs.existsSync(fullPath)) {
-            fs.removeSync(fullPath);
-          }
+      const existing = fs.readJsonSync(metadataPath) as {
+        managedAgents?: string[];
+      };
+
+      for (const agentName of existing.managedAgents || []) {
+        if (agentName.includes("/") || agentName.includes("\\")) {
+          log.warn(
+            `Warning: Skipping invalid agent name "${agentName}" (contains path separator)`,
+          );
+          continue;
         }
-      } catch {
-        // Ignore errors reading metadata
+        const fullPath = path.join(targetAgentsDir, agentName + ".md");
+        if (fs.existsSync(fullPath)) fs.removeSync(fullPath);
       }
     }
 
     const managedAgents: string[] = [];
-
     for (const agent of agents) {
-      // Use base name only
       const agentName = path.basename(agent.name, path.extname(agent.name));
-      const agentFile = path.join(targetAgentsDir, agentName + ".md");
-
-      fs.writeFileSync(agentFile, agent.content);
+      fs.writeFileSync(
+        path.join(targetAgentsDir, agentName + ".md"),
+        agent.content,
+      );
       managedAgents.push(agentName);
     }
 
-    // Write metadata file to track managed agents
-    const metadata: AgentsAicmMetadata = {
-      managedAgents,
-    };
-    fs.writeJsonSync(metadataPath, metadata, { spaces: 2 });
+    fs.writeJsonSync(metadataPath, { managedAgents }, { spaces: 2 });
   }
 }
 
-/**
- * Warn about agent name collisions from different presets
- */
-export function warnPresetAgentCollisions(agents: AgentFile[]): void {
-  const collisions = new Map<
-    string,
-    { presets: Set<string>; lastPreset: string }
-  >();
-
-  for (const agent of agents) {
-    if (!agent.presetName) continue;
-
-    const entry = collisions.get(agent.name);
+export function warnPresetSkillCollisions(skills: SkillFile[]): void {
+  const seen = new Map<string, { presets: Set<string>; last: string }>();
+  for (const skill of skills) {
+    if (!skill.presetName) continue;
+    const entry = seen.get(skill.name);
     if (entry) {
-      entry.presets.add(agent.presetName);
-      entry.lastPreset = agent.presetName;
+      entry.presets.add(skill.presetName);
+      entry.last = skill.presetName;
     } else {
-      collisions.set(agent.name, {
-        presets: new Set([agent.presetName]),
-        lastPreset: agent.presetName,
+      seen.set(skill.name, {
+        presets: new Set([skill.presetName]),
+        last: skill.presetName,
       });
     }
   }
 
-  for (const [agentName, { presets, lastPreset }] of collisions) {
+  for (const [name, { presets, last }] of seen) {
     if (presets.size > 1) {
-      const presetList = Array.from(presets).sort().join(", ");
+      const list = Array.from(presets).sort().join(", ");
       console.warn(
         chalk.yellow(
-          `Warning: multiple presets provide the "${agentName}" agent (${presetList}). Using definition from ${lastPreset}.`,
+          `Warning: multiple presets provide the "${name}" skill (${list}). Using definition from ${last}.`,
         ),
       );
     }
   }
 }
 
-/**
- * Dedupe agents by name (last one wins)
- */
-export function dedupeAgentsForInstall(agents: AgentFile[]): AgentFile[] {
-  const unique = new Map<string, AgentFile>();
+export function warnPresetAgentCollisions(agents: AgentFile[]): void {
+  const seen = new Map<string, { presets: Set<string>; last: string }>();
   for (const agent of agents) {
-    unique.set(agent.name, agent);
+    if (!agent.presetName) continue;
+    const entry = seen.get(agent.name);
+    if (entry) {
+      entry.presets.add(agent.presetName);
+      entry.last = agent.presetName;
+    } else {
+      seen.set(agent.name, {
+        presets: new Set([agent.presetName]),
+        last: agent.presetName,
+      });
+    }
   }
+
+  for (const [name, { presets, last }] of seen) {
+    if (presets.size > 1) {
+      const list = Array.from(presets).sort().join(", ");
+      console.warn(
+        chalk.yellow(
+          `Warning: multiple presets provide the "${name}" agent (${list}). Using definition from ${last}.`,
+        ),
+      );
+    }
+  }
+}
+
+export function dedupeSkillsForInstall(skills: SkillFile[]): SkillFile[] {
+  const unique = new Map<string, SkillFile>();
+  for (const skill of skills) unique.set(skill.name, skill);
   return Array.from(unique.values());
 }
 
-/**
- * Write MCP servers configuration to IDE targets
- */
-function writeMcpServersToTargets(
-  mcpServers: MCPServers,
-  targets: string[],
-  cwd: string,
-): void {
-  if (!mcpServers || Object.keys(mcpServers).length === 0) return;
-
-  for (const target of targets) {
-    const mcpPath = resolveTargetPath(target, cwd);
-    writeMcpServersToFile(mcpServers, mcpPath);
-  }
+export function dedupeAgentsForInstall(agents: AgentFile[]): AgentFile[] {
+  const unique = new Map<string, AgentFile>();
+  for (const agent of agents) unique.set(agent.name, agent);
+  return Array.from(unique.values());
 }
 
-/**
- * Write hooks to IDE targets
- */
 function writeHooksToTargets(
   hooksConfig: HooksJson,
   hookFiles: HookFile[],
   targets: string[],
   cwd: string,
 ): void {
-  const hasHooks =
-    hooksConfig.hooks && Object.keys(hooksConfig.hooks).length > 0;
-
-  if (!hasHooks && hookFiles.length === 0) {
-    return;
-  }
+  const hookCount = countHooks(hooksConfig);
+  if (hookCount === 0 && hookFiles.length === 0) return;
 
   for (const target of targets) {
     const targetPath = resolveTargetPath(target, cwd);
@@ -444,60 +524,6 @@ function writeHooksToTargets(
   }
 }
 
-/**
- * Write MCP servers configuration to a specific file
- */
-export function writeMcpServersToFile(
-  mcpServers: MCPServers,
-  mcpPath: string,
-): void {
-  fs.ensureDirSync(path.dirname(mcpPath));
-
-  const existingConfig: Record<string, unknown> = fs.existsSync(mcpPath)
-    ? fs.readJsonSync(mcpPath)
-    : {};
-
-  const existingMcpServers = existingConfig?.mcpServers ?? {};
-
-  // Filter out any existing aicm-managed servers (with aicm: true)
-  // This removes stale aicm servers that are no longer in the configuration
-  const userMcpServers: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(existingMcpServers)) {
-    if (typeof value === "object" && value !== null && value.aicm !== true) {
-      userMcpServers[key] = value;
-    }
-  }
-
-  // Mark new aicm servers as managed and filter out canceled servers
-  const aicmMcpServers: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(mcpServers)) {
-    if (value !== false) {
-      aicmMcpServers[key] = {
-        ...value,
-        aicm: true,
-      };
-    }
-  }
-
-  // Merge user servers with aicm servers (aicm servers override user servers with same key)
-  const mergedMcpServers = {
-    ...userMcpServers,
-    ...aicmMcpServers,
-  };
-
-  const mergedConfig = {
-    ...existingConfig,
-    mcpServers: mergedMcpServers,
-  };
-
-  fs.writeJsonSync(mcpPath, mergedConfig, { spaces: 2 });
-}
-
-/**
- * Install instructions for a single package (used within workspaces and standalone installs)
- */
 export async function installPackage(
   options: InstallOptions = {},
 ): Promise<InstallResult> {
@@ -560,34 +586,29 @@ export async function installPackage(
         );
 
         writeSkillsToTargets(skillsToInstall, config.targets.skills, cwd);
-
-        writeAgentsToTargets(agentsToInstall, config.targets.agents, cwd);
+        writeSubagentsToTargets(agentsToInstall, config.targets.agents, cwd);
 
         if (mcpServers && Object.keys(mcpServers).length > 0) {
           writeMcpServersToTargets(mcpServers, config.targets.mcp, cwd);
         }
 
-        if (hooks && (countHooks(hooks) > 0 || hookFiles.length > 0)) {
+        const hooksCount = countHooks(hooks);
+        if (hooksCount > 0 || hookFiles.length > 0) {
           writeHooksToTargets(hooks, hookFiles, config.targets.hooks, cwd);
         }
       }
 
       const uniqueInstructionCount = new Set(
-        instructions.map(
-          (instruction) =>
-            `${instruction.presetName ?? "local"}::${instruction.name}`,
-        ),
+        instructions.map((i) => `${i.presetName ?? "local"}::${i.name}`),
       ).size;
       const uniqueHookCount = countHooks(hooks);
-      const uniqueSkillCount = skillsToInstall.length;
-      const uniqueAgentCount = agentsToInstall.length;
 
       return {
         success: true,
         installedInstructionCount: uniqueInstructionCount,
         installedHookCount: uniqueHookCount,
-        installedSkillCount: uniqueSkillCount,
-        installedAgentCount: uniqueAgentCount,
+        installedSkillCount: skillsToInstall.length,
+        installedAgentCount: agentsToInstall.length,
         packagesCount: 1,
       };
     } catch (error) {
@@ -604,19 +625,14 @@ export async function installPackage(
   });
 }
 
-/**
- * Core implementation of the instruction installation logic
- */
 export async function install(
   options: InstallOptions = {},
 ): Promise<InstallResult> {
   const cwd = options.cwd || process.cwd();
-  const installOnCI = options.installOnCI === true; // Default to false if not specified
+  const installOnCI = options.installOnCI === true;
 
-  const inCI = isCIEnvironment();
-  if (inCI && !installOnCI) {
-    console.log(chalk.yellow("Detected CI environment, skipping install."));
-
+  if (isCIEnvironment() && !installOnCI) {
+    log.info(chalk.yellow("Detected CI environment, skipping install."));
     return {
       success: true,
       installedInstructionCount: 0,
@@ -641,7 +657,7 @@ export async function install(
       (!resolvedConfig && detectWorkspacesFromPackageJson(cwd));
 
     if (shouldUseWorkspaces) {
-      return await installWorkspaces(
+      return installWorkspaces(
         cwd,
         installOnCI,
         options.verbose,
@@ -653,9 +669,6 @@ export async function install(
   });
 }
 
-/**
- * CLI command wrapper for install
- */
 export async function installCommand(
   installOnCI?: boolean,
   verbose?: boolean,
@@ -665,64 +678,57 @@ export async function installCommand(
 
   if (!result.success) {
     throw result.error ?? new Error("Installation failed with unknown error");
-  } else {
-    const instructionCount = result.installedInstructionCount;
-    const hookCount = result.installedHookCount;
-    const skillCount = result.installedSkillCount;
-    const agentCount = result.installedAgentCount;
-    const instructionMessage =
-      instructionCount > 0
-        ? `${instructionCount} instruction${instructionCount === 1 ? "" : "s"}`
-        : null;
-    const hookMessage =
-      hookCount > 0 ? `${hookCount} hook${hookCount === 1 ? "" : "s"}` : null;
-    const skillMessage =
-      skillCount > 0
-        ? `${skillCount} skill${skillCount === 1 ? "" : "s"}`
-        : null;
-    const agentMessage =
-      agentCount > 0
-        ? `${agentCount} agent${agentCount === 1 ? "" : "s"}`
-        : null;
-    const countsParts: string[] = [];
-    if (instructionMessage) {
-      countsParts.push(instructionMessage);
-    }
-    if (hookMessage) {
-      countsParts.push(hookMessage);
-    }
-    if (skillMessage) {
-      countsParts.push(skillMessage);
-    }
-    if (agentMessage) {
-      countsParts.push(agentMessage);
-    }
-    const countsMessage =
-      countsParts.length > 0
-        ? countsParts.join(", ").replace(/, ([^,]*)$/, " and $1")
-        : "0 instructions";
+  }
 
-    if (dryRun) {
-      if (result.packagesCount > 1) {
-        console.log(
-          `Dry run: validated ${countsMessage} across ${result.packagesCount} packages`,
-        );
-      } else {
-        console.log(`Dry run: validated ${countsMessage}`);
-      }
-    } else if (
-      instructionCount === 0 &&
-      hookCount === 0 &&
-      skillCount === 0 &&
-      agentCount === 0
-    ) {
-      console.log("No instructions, hooks, skills, or agents installed");
-    } else if (result.packagesCount > 1) {
-      console.log(
-        `Successfully installed ${countsMessage} across ${result.packagesCount} packages`,
+  const {
+    installedInstructionCount,
+    installedHookCount,
+    installedSkillCount,
+    installedAgentCount,
+  } = result;
+  const parts: string[] = [];
+  if (installedInstructionCount > 0)
+    parts.push(
+      `${installedInstructionCount} instruction${installedInstructionCount === 1 ? "" : "s"}`,
+    );
+  if (installedHookCount > 0)
+    parts.push(
+      `${installedHookCount} hook${installedHookCount === 1 ? "" : "s"}`,
+    );
+  if (installedSkillCount > 0)
+    parts.push(
+      `${installedSkillCount} skill${installedSkillCount === 1 ? "" : "s"}`,
+    );
+  if (installedAgentCount > 0)
+    parts.push(
+      `${installedAgentCount} agent${installedAgentCount === 1 ? "" : "s"}`,
+    );
+
+  const countsMessage =
+    parts.length > 0
+      ? parts.join(", ").replace(/, ([^,]*)$/, " and $1")
+      : "0 instructions";
+
+  if (dryRun) {
+    if (result.packagesCount > 1) {
+      log.info(
+        `Dry run: validated ${countsMessage} across ${result.packagesCount} packages`,
       );
     } else {
-      console.log(`Successfully installed ${countsMessage}`);
+      log.info(`Dry run: validated ${countsMessage}`);
     }
+  } else if (
+    installedInstructionCount === 0 &&
+    installedHookCount === 0 &&
+    installedSkillCount === 0 &&
+    installedAgentCount === 0
+  ) {
+    log.info("No instructions, hooks, skills, or agents installed");
+  } else if (result.packagesCount > 1) {
+    log.info(
+      `Successfully installed ${countsMessage} across ${result.packagesCount} packages`,
+    );
+  } else {
+    log.info(`Successfully installed ${countsMessage}`);
   }
 }

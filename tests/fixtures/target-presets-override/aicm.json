@@ -1,10 +1,7 @@
 {
   "rootDir": "./",
   "instructions": "instructions/",
-  "targets": {
-    "presets": ["cursor", "claude-code"],
-    "mcp": [".cursor/mcp.json", ".mcp.json", "extra-mcp.json"]
-  },
+  "targets": ["cursor"],
   "mcpServers": {
     "test-server": {
       "command": "echo",

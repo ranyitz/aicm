@@ -19,43 +19,34 @@ export interface InstallCache {
 export interface InstallCacheEntry {
   /** Full GitHub URL as specified in presets */
   url: string;
-  /** Branch or tag if specified */
+  /** Branch or tag, if specified */
   ref?: string;
   /** Commit SHA at time of clone */
   sha?: string;
-  /** Sub-path within repo where the aicm.json lives */
+  /** Sub-path within repo where aicm.json lives */
   subpath?: string;
-  /** ISO 8601 timestamp of when this entry was cached */
+  /** ISO 8601 timestamp */
   cachedAt: string;
   /** Absolute path to the cached repo on disk */
   cachePath: string;
 }
 
-/**
- * Get the base directory for aicm cache: ~/.aicm/
- */
 function getAicmCacheDir(): string {
   return path.join(os.homedir(), ".aicm");
 }
 
-/**
- * Get the path to the install cache file: ~/.aicm/install-cache.json
- */
 export function getInstallCachePath(): string {
   return path.join(getAicmCacheDir(), "install-cache.json");
 }
 
-/**
- * Get the path where a repo should be cached: ~/.aicm/repos/{owner}/{repo}/
- */
 export function getRepoCachePath(owner: string, repo: string): string {
   return path.join(getAicmCacheDir(), "repos", owner, repo);
 }
 
-/**
- * Read the install cache from disk.
- * Returns an empty cache if the file doesn't exist or is invalid/outdated.
- */
+function createEmptyCache(): InstallCache {
+  return { version: CURRENT_CACHE_VERSION, entries: {} };
+}
+
 export async function readInstallCache(): Promise<InstallCache> {
   const cachePath = getInstallCachePath();
 
@@ -67,7 +58,6 @@ export async function readInstallCache(): Promise<InstallCache> {
     const content = await fs.readFile(cachePath, "utf8");
     const data = JSON.parse(content) as InstallCache;
 
-    // Version mismatch: wipe and start fresh
     if (data.version !== CURRENT_CACHE_VERSION) {
       return createEmptyCache();
     }
@@ -78,20 +68,12 @@ export async function readInstallCache(): Promise<InstallCache> {
   }
 }
 
-/**
- * Write the install cache to disk.
- * Creates the ~/.aicm/ directory if it doesn't exist.
- */
 export async function writeInstallCache(cache: InstallCache): Promise<void> {
   const cachePath = getInstallCachePath();
   await fs.ensureDir(path.dirname(cachePath));
   await fs.writeFile(cachePath, JSON.stringify(cache, null, 2));
 }
 
-/**
- * Get a cache entry by key.
- * The key is the canonical GitHub URL: https://github.com/{owner}/{repo}
- */
 export async function getCacheEntry(
   key: string,
 ): Promise<InstallCacheEntry | null> {
@@ -99,9 +81,6 @@ export async function getCacheEntry(
   return cache.entries[key] ?? null;
 }
 
-/**
- * Set (upsert) a cache entry.
- */
 export async function setCacheEntry(
   key: string,
   entry: InstallCacheEntry,
@@ -111,22 +90,10 @@ export async function setCacheEntry(
   await writeInstallCache(cache);
 }
 
-/**
- * Check whether a cache entry is still valid.
- * An entry is valid if its cachePath directory exists on disk.
- */
 export function isCacheValid(entry: InstallCacheEntry): boolean {
   return fs.existsSync(entry.cachePath);
 }
 
-/**
- * Build the canonical cache key for a GitHub repo.
- * Format: https://github.com/{owner}/{repo}
- */
 export function buildCacheKey(owner: string, repo: string): string {
   return `https://github.com/${owner}/${repo}`;
-}
-
-function createEmptyCache(): InstallCache {
-  return { version: CURRENT_CACHE_VERSION, entries: {} };
 }

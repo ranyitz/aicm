@@ -1,62 +1,23 @@
+/**
+ * Configuration loading and validation.
+ *
+ * Loads aicm.json via cosmiconfig, validates structure,
+ * and resolves all referenced resources (instructions, skills, agents, hooks, presets).
+ */
+
 import fs from "fs-extra";
 import path from "node:path";
-import { cosmiconfig, CosmiconfigResult } from "cosmiconfig";
 import fg from "fast-glob";
+import { cosmiconfig } from "cosmiconfig";
+import { InstructionFile, loadInstructionsFromPath } from "./instructions";
+import { TargetsConfig, validateTargetsInput, resolveTargets } from "./targets";
 import {
+  HookFile,
+  HooksJson,
   loadHooksFromDirectory,
   mergeHooksConfigs,
-  HooksJson,
-  HookFile,
 } from "./hooks";
-import { InstructionFile, loadInstructionsFromPath } from "./instructions";
-import { TargetsInput, validateTargetsInput, resolveTargets } from "./presets";
-import {
-  parsePresetSource,
-  GitHubPresetSource,
-  isGitHubPreset,
-} from "./preset-source";
-import {
-  getGitHubToken,
-  fetchRepoSize,
-  fetchFileContent,
-  SPARSE_CHECKOUT_THRESHOLD_KB,
-} from "./github";
-import { shallowClone, sparseClone } from "./git";
-import {
-  getCacheEntry,
-  setCacheEntry,
-  isCacheValid,
-  getRepoCachePath,
-  buildCacheKey,
-} from "./install-cache";
-
-export interface TargetsConfig {
-  skills?: string[];
-  agents?: string[];
-  instructions?: string[];
-  mcp?: string[];
-  hooks?: string[];
-}
-
-interface RawConfig {
-  rootDir?: string;
-  instructions?: string;
-  targets?: TargetsInput;
-  presets?: string[];
-  mcpServers?: MCPServers;
-  workspaces?: boolean;
-  skipInstall?: boolean;
-}
-
-export interface Config {
-  rootDir?: string;
-  instructions?: string;
-  targets: Required<TargetsConfig>;
-  presets?: string[];
-  mcpServers?: MCPServers;
-  workspaces?: boolean;
-  skipInstall?: boolean;
-}
+import { loadPresetRecursively, mergePresetMcpServers } from "./preset-loader";
 
 export type MCPServer =
   | {
@@ -77,7 +38,14 @@ export interface MCPServers {
   [serverName: string]: MCPServer;
 }
 
-export interface ManagedFile {
+export interface SkillFile {
+  name: string;
+  sourcePath: string;
+  source: "local" | "preset";
+  presetName?: string;
+}
+
+export interface AgentFile {
   name: string;
   content: string;
   sourcePath: string;
@@ -85,14 +53,17 @@ export interface ManagedFile {
   presetName?: string;
 }
 
-export interface SkillFile {
-  name: string; // skill directory name
-  sourcePath: string; // absolute path to source skill directory
-  source: "local" | "preset";
-  presetName?: string;
-}
+export type { HookFile, HooksJson } from "./hooks";
 
-export type AgentFile = ManagedFile;
+export interface Config {
+  rootDir?: string;
+  instructions?: string;
+  targets: TargetsConfig;
+  presets?: string[];
+  mcpServers?: MCPServers;
+  workspaces?: boolean;
+  skipInstall?: boolean;
+}
 
 export interface ResolvedConfig {
   config: Config;
@@ -114,59 +85,12 @@ const ALLOWED_CONFIG_KEYS = [
   "skipInstall",
 ] as const;
 
-export function detectWorkspacesFromPackageJson(cwd: string): boolean {
-  try {
-    const packageJsonPath = path.join(cwd, "package.json");
-    if (!fs.existsSync(packageJsonPath)) {
-      return false;
-    }
-
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-    return Boolean(packageJson.workspaces);
-  } catch {
-    return false;
-  }
-}
-
-function resolveWorkspaces(
-  config: unknown,
-  configFilePath: string,
-  cwd: string,
-): boolean {
-  const hasConfigWorkspaces =
-    typeof config === "object" && config !== null && "workspaces" in config;
-
-  if (hasConfigWorkspaces) {
-    if (typeof config.workspaces === "boolean") {
-      return config.workspaces;
-    }
-
-    throw new Error(
-      `workspaces must be a boolean in config at ${configFilePath}`,
-    );
-  }
-
-  return detectWorkspacesFromPackageJson(cwd);
-}
-
-function applyDefaults(config: RawConfig, workspaces: boolean): Config {
-  return {
-    rootDir: config.rootDir,
-    instructions: config.instructions,
-    targets: resolveTargets(config.targets),
-    presets: config.presets || [],
-    mcpServers: config.mcpServers || {},
-    workspaces,
-    skipInstall: config.skipInstall || false,
-  };
-}
-
 function validateConfig(
   config: unknown,
   configFilePath: string,
   cwd: string,
   isWorkspaceMode: boolean = false,
-): asserts config is Config {
+): void {
   if (typeof config !== "object" || config === null) {
     throw new Error(`Config is not an object at ${configFilePath}`);
   }
@@ -184,49 +108,36 @@ function validateConfig(
     );
   }
 
-  // Validate rootDir
-  const hasRootDir = "rootDir" in config && typeof config.rootDir === "string";
-  const hasInstructions =
-    "instructions" in config && typeof config.instructions === "string";
+  const obj = config as Record<string, unknown>;
+  const hasRootDir = typeof obj.rootDir === "string";
+  const hasInstructions = typeof obj.instructions === "string";
   const hasPresets =
-    "presets" in config &&
-    Array.isArray(config.presets) &&
-    config.presets.length > 0;
+    Array.isArray(obj.presets) && (obj.presets as unknown[]).length > 0;
 
   if (hasInstructions) {
-    const baseDir = hasRootDir
-      ? path.resolve(cwd, config.rootDir as string)
-      : cwd;
-    const instructionPath = path.resolve(
-      baseDir,
-      config.instructions as string,
-    );
+    const baseDir = hasRootDir ? path.resolve(cwd, obj.rootDir as string) : cwd;
+    const instructionPath = path.resolve(baseDir, obj.instructions as string);
     if (!fs.existsSync(instructionPath)) {
       throw new Error(`Instructions path does not exist: ${instructionPath}`);
     }
   }
 
   if (hasRootDir) {
-    const rootPath = path.resolve(cwd, config.rootDir as string);
-
+    const rootPath = path.resolve(cwd, obj.rootDir as string);
     if (!fs.existsSync(rootPath)) {
       throw new Error(`Root directory does not exist: ${rootPath}`);
     }
-
     if (!fs.statSync(rootPath).isDirectory()) {
       throw new Error(`Root path is not a directory: ${rootPath}`);
     }
 
-    // Check for at least one valid subdirectory or file
     const hasInstructionsSource = hasInstructions
-      ? fs.existsSync(path.resolve(rootPath, config.instructions as string))
+      ? fs.existsSync(path.resolve(rootPath, obj.instructions as string))
       : false;
     const hasHooks = fs.existsSync(path.join(rootPath, "hooks.json"));
     const hasSkills = fs.existsSync(path.join(rootPath, "skills"));
     const hasAgents = fs.existsSync(path.join(rootPath, "agents"));
 
-    // In workspace mode, root config doesn't need these directories
-    // since packages will have their own configurations
     if (
       !isWorkspaceMode &&
       !hasInstructionsSource &&
@@ -240,506 +151,129 @@ function validateConfig(
       );
     }
   } else if (!isWorkspaceMode && !hasPresets && !hasInstructions) {
-    // If no rootDir specified and not in workspace mode, must have presets or instructions
     throw new Error(
       `At least one of rootDir, instructions, or presets must be specified in config at ${configFilePath}`,
     );
   }
 
-  if ("targets" in config) {
-    validateTargetsInput(config.targets, configFilePath);
+  if ("targets" in obj) {
+    validateTargetsInput(obj.targets, configFilePath);
   }
 }
 
-/**
- * Load skills from a skills/ directory
- * Each direct subdirectory containing a SKILL.md file is considered a skill
- */
-async function loadSkillsFromDirectory(
-  directoryPath: string,
-  source: "local" | "preset",
-  presetName?: string,
-): Promise<SkillFile[]> {
-  const skills: SkillFile[] = [];
-
-  if (!fs.existsSync(directoryPath)) {
-    return skills;
+export function detectWorkspacesFromPackageJson(cwd: string): boolean {
+  try {
+    const pkgPath = path.join(cwd, "package.json");
+    if (!fs.existsSync(pkgPath)) return false;
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    return Boolean(pkg.workspaces);
+  } catch {
+    return false;
   }
-
-  // Get all direct subdirectories
-  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const skillPath = path.join(directoryPath, entry.name);
-    const skillMdPath = path.join(skillPath, "SKILL.md");
-
-    // Only include directories that contain a SKILL.md file
-    if (!fs.existsSync(skillMdPath)) {
-      continue;
-    }
-
-    skills.push({
-      name: entry.name,
-      sourcePath: skillPath,
-      source,
-      presetName,
-    });
-  }
-
-  return skills;
 }
 
-/**
- * Load agents from an agents/ directory
- * Agents are markdown files (.md) with YAML frontmatter
- */
-async function loadAgentsFromDirectory(
-  directoryPath: string,
-  source: "local" | "preset",
-  presetName?: string,
-): Promise<AgentFile[]> {
-  const agents: AgentFile[] = [];
+function resolveWorkspacesFlag(
+  config: unknown,
+  configFilePath: string,
+  cwd: string,
+): boolean {
+  const hasWorkspaces =
+    typeof config === "object" && config !== null && "workspaces" in config;
 
-  if (!fs.existsSync(directoryPath)) {
-    return agents;
+  if (hasWorkspaces) {
+    if (typeof (config as Record<string, unknown>).workspaces === "boolean") {
+      return (config as Record<string, unknown>).workspaces as boolean;
+    }
+    throw new Error(
+      `workspaces must be a boolean in config at ${configFilePath}`,
+    );
   }
 
-  const pattern = path.join(directoryPath, "**/*.md").replace(/\\/g, "/");
-  const filePaths = await fg(pattern, {
-    onlyFiles: true,
-    absolute: true,
+  return detectWorkspacesFromPackageJson(cwd);
+}
+
+interface RawConfig {
+  rootDir?: string;
+  instructions?: string;
+  targets?: string[];
+  presets?: string[];
+  mcpServers?: MCPServers;
+  workspaces?: boolean;
+  skipInstall?: boolean;
+}
+
+function applyDefaults(raw: RawConfig, workspaces: boolean): Config {
+  return {
+    rootDir: raw.rootDir,
+    instructions: raw.instructions,
+    targets: resolveTargets(raw.targets),
+    presets: raw.presets || [],
+    mcpServers: raw.mcpServers || {},
+    workspaces,
+    skipInstall: raw.skipInstall || false,
+  };
+}
+
+async function loadConfigFile(searchFrom?: string) {
+  const explorer = cosmiconfig("aicm", {
+    searchPlaces: ["aicm.json", "package.json"],
   });
 
-  filePaths.sort();
-
-  for (const filePath of filePaths) {
-    const content = await fs.readFile(filePath, "utf8");
-    const relativePath = path.relative(directoryPath, filePath);
-    const agentName = relativePath.replace(/\.md$/, "").replace(/\\/g, "/");
-
-    agents.push({
-      name: agentName,
-      content,
-      sourcePath: filePath,
-      source,
-      presetName,
-    });
+  try {
+    return await explorer.search(searchFrom);
+  } catch (error) {
+    throw new Error(
+      `Failed to load configuration: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
-
-  return agents;
 }
 
 /**
- * Extract namespace from preset path for directory structure
- * Handles both npm packages and local paths consistently
+ * Check if workspaces mode is enabled without loading all resources.
  */
-export function extractNamespaceFromPresetPath(presetPath: string): string[] {
-  // Special case: npm package names always use forward slashes, regardless of platform
-  if (presetPath.startsWith("@")) {
-    // For scoped packages like @scope/package/subdir, create nested directories
-    return presetPath.split("/");
+export async function checkWorkspacesEnabled(cwd?: string): Promise<boolean> {
+  const workingDir = cwd || process.cwd();
+  const result = await loadConfigFile(workingDir);
+
+  if (!result?.config) {
+    return detectWorkspacesFromPackageJson(workingDir);
   }
 
-  // Always split by forward slash since JSON config files use forward slashes on all platforms
-  const parts = presetPath.split(path.posix.sep);
-  return parts.filter(
-    (part) => part.length > 0 && part !== "." && part !== "..",
-  );
+  return resolveWorkspacesFlag(result.config, result.filepath, workingDir);
 }
 
-async function resolvePresetPath(
-  presetPath: string,
-  cwd: string,
-): Promise<string | null> {
-  // GitHub URL presets: download/cache and return local path to aicm.json
-  const source = parsePresetSource(presetPath);
+/**
+ * Load and fully resolve the configuration, including all instructions,
+ * skills, agents, hooks, and presets.
+ */
+export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
+  const workingDir = cwd || process.cwd();
+  const configResult = await loadConfigFile(workingDir);
 
-  if (source.type === "github") {
-    return await resolveGitHubPreset(source);
-  }
-
-  // Support specifying aicm.json directory and load the config from it
-  if (!presetPath.endsWith(".json")) {
-    presetPath = path.join(presetPath, "aicm.json");
-  }
-
-  // Support local or absolute paths
-  const absolutePath = path.isAbsolute(presetPath)
-    ? presetPath
-    : path.resolve(cwd, presetPath);
-
-  if (fs.existsSync(absolutePath)) {
-    return absolutePath;
-  }
-
-  try {
-    // Support npm packages
-    const resolvedPath = require.resolve(presetPath, {
-      paths: [cwd, __dirname],
-    });
-    return fs.existsSync(resolvedPath) ? resolvedPath : null;
-  } catch {
+  if (!configResult?.config) {
     return null;
   }
+
+  const raw = configResult.config;
+  const isWorkspaces = resolveWorkspacesFlag(
+    raw,
+    configResult.filepath,
+    workingDir,
+  );
+
+  validateConfig(raw, configResult.filepath, workingDir, isWorkspaces);
+
+  const config = applyDefaults(raw, isWorkspaces);
+
+  const { instructions, skills, agents, mcpServers, hooks, hookFiles } =
+    await loadAllResources(config, workingDir);
+
+  return { config, instructions, skills, agents, mcpServers, hooks, hookFiles };
 }
 
-/**
- * Resolve a GitHub preset URL to a local aicm.json path.
- *
- * Flow:
- *   1. Check install cache -- if cached and valid, return immediately
- *   2. Preflight: fetch repo size via GitHub API
- *   3. Clone:
- *      - Small repos (<= 50 MB): shallow clone (--depth 1)
- *      - Large repos (> 50 MB): sparse checkout (only fetch needed paths)
- *        For sparse checkout, first fetch aicm.json via API to determine rootDir,
- *        then clone with only the necessary paths materialized.
- *   4. Update cache and return path to aicm.json
- */
-async function resolveGitHubPreset(
-  source: GitHubPresetSource,
-): Promise<string> {
-  const { owner, repo, ref, subpath } = source;
-  const cacheKey = buildCacheKey(owner, repo);
+// ---------- Resource loading ----------
 
-  // 1. Check cache
-  const cached = await getCacheEntry(cacheKey);
-  if (cached && isCacheValid(cached)) {
-    const aicmJsonPath = subpath
-      ? path.join(cached.cachePath, subpath, "aicm.json")
-      : path.join(cached.cachePath, "aicm.json");
-
-    if (fs.existsSync(aicmJsonPath)) {
-      return aicmJsonPath;
-    }
-    // Cache exists but aicm.json is missing -- re-download
-  }
-
-  // 2. Preflight: check repo size
-  const token = getGitHubToken();
-  const repoSizeKB = await fetchRepoSize(owner, repo, token);
-
-  const destPath = getRepoCachePath(owner, repo);
-
-  // Clean up any previous incomplete cache
-  if (fs.existsSync(destPath)) {
-    await fs.remove(destPath);
-  }
-
-  await fs.ensureDir(path.dirname(destPath));
-
-  const useSparse =
-    repoSizeKB !== null && repoSizeKB > SPARSE_CHECKOUT_THRESHOLD_KB;
-
-  // 3. Clone
-  if (useSparse) {
-    // For sparse checkout, determine what paths to materialize
-    const sparsePaths = await determineSparseCheckoutPaths(
-      owner,
-      repo,
-      subpath,
-      ref,
-      token,
-    );
-
-    try {
-      await sparseClone(source.cloneUrl, destPath, sparsePaths, ref);
-    } catch {
-      // Fallback to shallow clone if sparse checkout fails
-      if (fs.existsSync(destPath)) {
-        await fs.remove(destPath);
-      }
-      await shallowClone(source.cloneUrl, destPath, ref);
-    }
-  } else {
-    await shallowClone(source.cloneUrl, destPath, ref);
-  }
-
-  // 4. Verify aicm.json exists
-  const aicmJsonPath = subpath
-    ? path.join(destPath, subpath, "aicm.json")
-    : path.join(destPath, "aicm.json");
-
-  if (!fs.existsSync(aicmJsonPath)) {
-    const location = subpath ? `${subpath}/` : "root of ";
-    throw new Error(
-      `No aicm.json found at ${location}${owner}/${repo}. ` +
-        `Make sure the repository contains an aicm.json configuration file at the specified path.`,
-    );
-  }
-
-  // 5. Update cache
-  await setCacheEntry(cacheKey, {
-    url: source.raw,
-    ref,
-    subpath,
-    cachedAt: new Date().toISOString(),
-    cachePath: destPath,
-  });
-
-  return aicmJsonPath;
-}
-
-/**
- * Determine which paths to include in a sparse checkout.
- *
- * Fetches the aicm.json via GitHub Contents API to read rootDir,
- * then returns the paths needed to materialize the preset content.
- */
-async function determineSparseCheckoutPaths(
-  owner: string,
-  repo: string,
-  subpath: string | undefined,
-  ref: string | undefined,
-  token: string | null,
-): Promise<string[]> {
-  const configPath = subpath
-    ? path.posix.join(subpath, "aicm.json")
-    : "aicm.json";
-
-  const content = await fetchFileContent(owner, repo, configPath, ref, token);
-
-  if (!content) {
-    // If we can't fetch the config, materialize the whole subpath or root
-    return subpath ? [subpath] : ["."];
-  }
-
-  try {
-    const config = JSON.parse(content) as { rootDir?: string };
-    const rootDir = config.rootDir || ".";
-
-    // Security: validate rootDir doesn't escape the subpath
-    if (subpath) {
-      const resolvedRoot = path.posix.normalize(
-        path.posix.join(subpath, rootDir),
-      );
-      if (
-        !resolvedRoot.startsWith(subpath) &&
-        resolvedRoot !== subpath.replace(/\/$/, "")
-      ) {
-        throw new Error(
-          `rootDir "${rootDir}" in preset escapes the specified subpath "${subpath}". ` +
-            `rootDir must reference a path within the preset's directory.`,
-        );
-      }
-
-      const paths = [path.posix.join(subpath, "aicm.json")];
-
-      // Add rootDir path if it's different from subpath
-      const rootPath = path.posix.normalize(path.posix.join(subpath, rootDir));
-      if (rootPath !== subpath && rootPath !== path.posix.join(subpath, ".")) {
-        paths.push(rootPath);
-      } else {
-        paths.push(subpath);
-      }
-
-      return [...new Set(paths)];
-    }
-
-    // No subpath: materialize rootDir and aicm.json
-    const paths = ["aicm.json"];
-    if (rootDir !== "." && rootDir !== "./") {
-      paths.push(rootDir);
-    }
-    return paths.length > 0 ? paths : ["."];
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("rootDir") &&
-      error.message.includes("escapes")
-    ) {
-      throw error;
-    }
-    // JSON parse error or unexpected -- fall back to subpath or root
-    return subpath ? [subpath] : ["."];
-  }
-}
-
-async function loadPreset(
-  presetPath: string,
-  cwd: string,
-): Promise<{
-  config: RawConfig;
-  rootDir: string;
-  resolvedPath: string;
-}> {
-  const resolvedPresetPath = await resolvePresetPath(presetPath, cwd);
-
-  if (!resolvedPresetPath) {
-    const hint = isGitHubPreset(presetPath)
-      ? "Make sure the GitHub URL is correct and the repository contains an aicm.json."
-      : "Make sure the package is installed or the path is correct.";
-    throw new Error(`Preset not found: "${presetPath}". ${hint}`);
-  }
-
-  let presetConfig: RawConfig;
-
-  try {
-    const content = await fs.readFile(resolvedPresetPath, "utf8");
-    presetConfig = JSON.parse(content);
-  } catch (error) {
-    throw new Error(
-      `Failed to load preset "${presetPath}": ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
-
-  const presetDir = path.dirname(resolvedPresetPath);
-  const presetRootDir = path.resolve(presetDir, presetConfig.rootDir || "./");
-
-  // Check if preset has content or inherits from other presets
-  const hasInstructionsSource =
-    typeof presetConfig.instructions === "string"
-      ? fs.existsSync(path.resolve(presetRootDir, presetConfig.instructions))
-      : false;
-  const hasHooks = fs.existsSync(path.join(presetRootDir, "hooks.json"));
-  const hasSkills = fs.existsSync(path.join(presetRootDir, "skills"));
-  const hasAgents = fs.existsSync(path.join(presetRootDir, "agents"));
-  const hasNestedPresets =
-    Array.isArray(presetConfig.presets) && presetConfig.presets.length > 0;
-
-  const hasAnyContent =
-    hasInstructionsSource ||
-    hasHooks ||
-    hasSkills ||
-    hasAgents ||
-    hasNestedPresets;
-
-  if (!hasAnyContent) {
-    throw new Error(
-      `Preset "${presetPath}" must have at least one of: instructions, skills/, agents/, hooks.json, or presets`,
-    );
-  }
-
-  return {
-    config: presetConfig,
-    rootDir: presetRootDir,
-    resolvedPath: resolvedPresetPath,
-  };
-}
-
-/**
- * Result of recursively loading a preset and its dependencies
- */
-interface PresetLoadResult {
-  instructions: InstructionFile[];
-  skills: SkillFile[];
-  agents: AgentFile[];
-  mcpServers: MCPServers;
-  hooksConfigs: HooksJson[];
-  hookFiles: HookFile[];
-}
-
-/**
- * Recursively load a preset and all its dependencies
- * @param presetPath The original preset path (used for namespacing)
- * @param cwd The current working directory for resolving paths
- * @param visited Set of already visited preset paths (by resolved absolute path) for cycle detection
- */
-async function loadPresetRecursively(
-  presetPath: string,
-  cwd: string,
-  visited: Set<string>,
-): Promise<PresetLoadResult> {
-  const preset = await loadPreset(presetPath, cwd);
-  const presetRootDir = preset.rootDir;
-  const presetDir = path.dirname(preset.resolvedPath);
-
-  // Check for circular dependency
-  if (visited.has(preset.resolvedPath)) {
-    throw new Error(
-      `Circular preset dependency detected: "${presetPath}" has already been loaded`,
-    );
-  }
-  visited.add(preset.resolvedPath);
-
-  const result: PresetLoadResult = {
-    instructions: [],
-    skills: [],
-    agents: [],
-    mcpServers: {},
-    hooksConfigs: [],
-    hookFiles: [],
-  };
-
-  // Load entities from this preset's rootDir
-  if (preset.config.instructions) {
-    const instructionsPath = path.resolve(
-      presetRootDir,
-      preset.config.instructions,
-    );
-    const presetInstructions = await loadInstructionsFromPath(
-      instructionsPath,
-      "preset",
-      presetPath,
-    );
-    result.instructions.push(...presetInstructions);
-  }
-
-  const presetHooksFile = path.join(presetRootDir, "hooks.json");
-  if (fs.existsSync(presetHooksFile)) {
-    const { config: presetHooksConfig, files: presetHookFiles } =
-      await loadHooksFromDirectory(presetRootDir, "preset", presetPath);
-    result.hooksConfigs.push(presetHooksConfig);
-    result.hookFiles.push(...presetHookFiles);
-  }
-
-  const presetSkillsPath = path.join(presetRootDir, "skills");
-  if (fs.existsSync(presetSkillsPath)) {
-    const presetSkills = await loadSkillsFromDirectory(
-      presetSkillsPath,
-      "preset",
-      presetPath,
-    );
-    result.skills.push(...presetSkills);
-  }
-
-  const presetAgentsPath = path.join(presetRootDir, "agents");
-  if (fs.existsSync(presetAgentsPath)) {
-    const presetAgents = await loadAgentsFromDirectory(
-      presetAgentsPath,
-      "preset",
-      presetPath,
-    );
-    result.agents.push(...presetAgents);
-  }
-
-  // Add MCP servers from this preset
-  if (preset.config.mcpServers) {
-    result.mcpServers = { ...preset.config.mcpServers };
-  }
-
-  // Recursively load nested presets
-  if (preset.config.presets && preset.config.presets.length > 0) {
-    for (const nestedPresetPath of preset.config.presets) {
-      const nestedResult = await loadPresetRecursively(
-        nestedPresetPath,
-        presetDir, // Use preset's directory as cwd for relative paths
-        visited,
-      );
-
-      // Merge results from nested preset
-      result.instructions.push(...nestedResult.instructions);
-      result.skills.push(...nestedResult.skills);
-      result.agents.push(...nestedResult.agents);
-      result.hooksConfigs.push(...nestedResult.hooksConfigs);
-      result.hookFiles.push(...nestedResult.hookFiles);
-
-      // Merge MCP servers (current preset takes precedence over nested)
-      result.mcpServers = mergePresetMcpServers(
-        result.mcpServers,
-        nestedResult.mcpServers,
-      );
-    }
-  }
-
-  return result;
-}
-
-async function loadAllInstructions(
+async function loadAllResources(
   config: Config,
   cwd: string,
 ): Promise<{
@@ -754,44 +288,41 @@ async function loadAllInstructions(
   const allSkills: SkillFile[] = [];
   const allAgents: AgentFile[] = [];
   const allHookFiles: HookFile[] = [];
-  const allHooksConfigs: HooksJson[] = [];
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
+  const allHooksConfigs: HooksJson[] = [];
 
-  // Load local files from rootDir (or cwd if rootDir is not set)
+  // Load local instructions
   if (config.instructions) {
     const basePath = config.rootDir ? path.resolve(cwd, config.rootDir) : cwd;
     const instructionsPath = path.resolve(basePath, config.instructions);
-    const localInstructions = await loadInstructionsFromPath(
-      instructionsPath,
-      "local",
-    );
-    allInstructions.push(...localInstructions);
+    const local = await loadInstructionsFromPath(instructionsPath, "local");
+    allInstructions.push(...local);
   }
 
+  // Load local skills, agents, hooks from rootDir
   if (config.rootDir) {
     const rootPath = path.resolve(cwd, config.rootDir);
 
-    // Load hooks from hooks.json (sibling to hooks/ directory)
     const hooksFilePath = path.join(rootPath, "hooks.json");
     if (fs.existsSync(hooksFilePath)) {
-      const { config: localHooksConfig, files: localHookFiles } =
-        await loadHooksFromDirectory(rootPath, "local");
-      allHooksConfigs.push(localHooksConfig);
-      allHookFiles.push(...localHookFiles);
+      const { config: hooksConfig, files } = await loadHooksFromDirectory(
+        rootPath,
+        "local",
+      );
+      allHooksConfigs.push(hooksConfig);
+      allHookFiles.push(...files);
     }
 
-    // Load skills from skills/ subdirectory
     const skillsPath = path.join(rootPath, "skills");
     if (fs.existsSync(skillsPath)) {
-      const localSkills = await loadSkillsFromDirectory(skillsPath, "local");
-      allSkills.push(...localSkills);
+      const skills = await loadSkillsFromDirectory(skillsPath, "local");
+      allSkills.push(...skills);
     }
 
-    // Load agents from agents/ subdirectory
     const agentsPath = path.join(rootPath, "agents");
     if (fs.existsSync(agentsPath)) {
-      const localAgents = await loadAgentsFromDirectory(agentsPath, "local");
-      allAgents.push(...localAgents);
+      const agents = await loadAgentsFromDirectory(agentsPath, "local");
+      allAgents.push(...agents);
     }
   }
 
@@ -800,28 +331,24 @@ async function loadAllInstructions(
     const visited = new Set<string>();
 
     for (const presetPath of config.presets) {
-      const presetResult = await loadPresetRecursively(
-        presetPath,
-        cwd,
-        visited,
-      );
-
-      allInstructions.push(...presetResult.instructions);
-      allSkills.push(...presetResult.skills);
-      allAgents.push(...presetResult.agents);
-      allHooksConfigs.push(...presetResult.hooksConfigs);
-      allHookFiles.push(...presetResult.hookFiles);
-
-      // Merge MCP servers (local config takes precedence)
+      const result = await loadPresetRecursively(presetPath, cwd, visited);
+      allInstructions.push(...result.instructions);
+      allSkills.push(...result.skills);
+      allAgents.push(...result.agents);
+      allHooksConfigs.push(...result.hooksConfigs);
+      allHookFiles.push(...result.hookFiles);
       mergedMcpServers = mergePresetMcpServers(
         mergedMcpServers,
-        presetResult.mcpServers,
+        result.mcpServers,
       );
     }
   }
 
-  // Merge all hooks configurations
-  const mergedHooks = mergeHooksConfigs(allHooksConfigs);
+  // Merge hooks configs
+  const mergedHooks: HooksJson =
+    allHooksConfigs.length > 0
+      ? mergeHooksConfigs(allHooksConfigs)
+      : { version: 1, hooks: {} };
 
   return {
     instructions: allInstructions,
@@ -833,99 +360,59 @@ async function loadAllInstructions(
   };
 }
 
-/**
- * Merge preset MCP servers with local config MCP servers
- * Local config takes precedence over preset config
- */
-function mergePresetMcpServers(
-  configMcpServers: MCPServers,
-  presetMcpServers: MCPServers,
-): MCPServers {
-  const newMcpServers = { ...configMcpServers };
+async function loadSkillsFromDirectory(
+  directoryPath: string,
+  source: "local" | "preset",
+  presetName?: string,
+): Promise<SkillFile[]> {
+  if (!fs.existsSync(directoryPath)) return [];
 
-  for (const [serverName, serverConfig] of Object.entries(presetMcpServers)) {
-    // Cancel if set to false in config
-    if (
-      Object.prototype.hasOwnProperty.call(newMcpServers, serverName) &&
-      newMcpServers[serverName] === false
-    ) {
-      delete newMcpServers[serverName];
-      continue;
-    }
-    // Only add if not already defined in config (local config takes precedence)
-    if (!Object.prototype.hasOwnProperty.call(newMcpServers, serverName)) {
-      newMcpServers[serverName] = serverConfig;
-    }
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+  const skills: SkillFile[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const skillPath = path.join(directoryPath, entry.name);
+    if (!fs.existsSync(path.join(skillPath, "SKILL.md"))) continue;
+    skills.push({
+      name: entry.name,
+      sourcePath: skillPath,
+      source,
+      presetName,
+    });
   }
 
-  return newMcpServers;
+  return skills;
 }
 
-async function loadConfigFile(searchFrom?: string): Promise<CosmiconfigResult> {
-  const explorer = cosmiconfig("aicm", {
-    searchPlaces: ["aicm.json", "package.json"],
-  });
+export { loadSkillsFromDirectory, loadAgentsFromDirectory };
 
-  try {
-    const result = await explorer.search(searchFrom);
-    return result;
-  } catch (error) {
-    throw new Error(
-      `Failed to load configuration: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
-}
+async function loadAgentsFromDirectory(
+  directoryPath: string,
+  source: "local" | "preset",
+  presetName?: string,
+): Promise<AgentFile[]> {
+  if (!fs.existsSync(directoryPath)) return [];
 
-/**
- * Check if workspaces mode is enabled without loading all instructions/presets
- * This is useful for commands that only need to know the workspace setting
- */
-export async function checkWorkspacesEnabled(cwd?: string): Promise<boolean> {
-  const workingDir = cwd || process.cwd();
+  const pattern = path.join(directoryPath, "**/*.md").replace(/\\/g, "/");
+  const filePaths = await fg(pattern, { onlyFiles: true, absolute: true });
+  filePaths.sort();
 
-  const configResult = await loadConfigFile(workingDir);
-
-  if (!configResult?.config) {
-    return detectWorkspacesFromPackageJson(workingDir);
-  }
-
-  return resolveWorkspaces(
-    configResult.config,
-    configResult.filepath,
-    workingDir,
-  );
-}
-
-export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
-  const workingDir = cwd || process.cwd();
-
-  const configResult = await loadConfigFile(workingDir);
-
-  if (!configResult?.config) {
-    return null;
+  const agents: AgentFile[] = [];
+  for (const filePath of filePaths) {
+    const content = await fs.readFile(filePath, "utf8");
+    const relativePath = path
+      .relative(directoryPath, filePath)
+      .replace(/\\/g, "/");
+    const agentName = relativePath.replace(/\.md$/, "");
+    agents.push({
+      name: agentName,
+      content,
+      sourcePath: filePath,
+      source,
+      presetName,
+    });
   }
 
-  const config = configResult.config;
-  const isWorkspaces = resolveWorkspaces(
-    config,
-    configResult.filepath,
-    workingDir,
-  );
-
-  validateConfig(config, configResult.filepath, workingDir, isWorkspaces);
-
-  const configWithDefaults = applyDefaults(config, isWorkspaces);
-
-  const { instructions, skills, agents, mcpServers, hooks, hookFiles } =
-    await loadAllInstructions(configWithDefaults, workingDir);
-
-  return {
-    config: configWithDefaults,
-    instructions,
-    skills,
-    agents,
-    mcpServers,
-    hooks,
-    hookFiles,
-  };
+  return agents;
 }

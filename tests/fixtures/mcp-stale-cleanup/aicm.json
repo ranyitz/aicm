@@ -1,23 +1,21 @@
 {
   "rootDir": "./",
   "instructions": "INSTRUCTIONS.md",
-  "targets": {
-    "skills": [".agents/skills"],
-    "agents": [".agents/agents"],
-    "instructions": ["AGENTS.md"],
-    "mcp": [".cursor/mcp.json"],
-    "hooks": [".cursor"]
-  },
+  "targets": ["cursor"],
   "mcpServers": {
     "existing-aicm-server": {
       "command": "./scripts/updated-existing-server.sh",
       "args": ["--updated"],
-      "env": { "UPDATED_TOKEN": "updated456" }
+      "env": {
+        "UPDATED_TOKEN": "updated456"
+      }
     },
     "new-aicm-server": {
       "command": "./scripts/new-aicm-server.sh",
       "args": ["--new"],
-      "env": { "NEW_TOKEN": "new123" }
+      "env": {
+        "NEW_TOKEN": "new123"
+      }
     }
   }
 }

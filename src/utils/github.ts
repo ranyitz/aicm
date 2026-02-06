@@ -1,32 +1,18 @@
 /**
- * GitHub API helpers for preflight checks and sparse checkout preparation.
+ * GitHub API helpers for preflight checks and sparse checkout.
  */
 
 import { execSync } from "child_process";
 
-/**
- * Size threshold in KB. Repos larger than this use sparse checkout.
- */
+/** Repos larger than this (in KB) trigger sparse checkout instead of shallow clone. */
 export const SPARSE_CHECKOUT_THRESHOLD_KB = 50 * 1024; // 50 MB
 
 /**
- * Resolve a GitHub personal access token.
- *
- * Checks (in order):
- *   1. GITHUB_TOKEN env var
- *   2. GH_TOKEN env var
- *   3. `gh auth token` CLI output
- *
- * Returns null if none found.
+ * Resolve a GitHub token. Checks GITHUB_TOKEN, GH_TOKEN, then `gh auth token`.
  */
 export function getGitHubToken(): string | null {
-  if (process.env.GITHUB_TOKEN) {
-    return process.env.GITHUB_TOKEN;
-  }
-
-  if (process.env.GH_TOKEN) {
-    return process.env.GH_TOKEN;
-  }
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+  if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
 
   try {
     const token = execSync("gh auth token", {
@@ -39,30 +25,16 @@ export function getGitHubToken(): string | null {
   }
 }
 
-/**
- * Build common headers for GitHub API requests.
- */
 function buildHeaders(token?: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
-    "User-Agent": "aicm-cli",
+    "User-Agent": "aicm",
   };
-
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   return headers;
 }
 
-/**
- * Fetch the size of a GitHub repository in KB.
- *
- * Uses the repos API: GET /repos/{owner}/{repo}
- * The `size` field is in KB.
- *
- * Returns the size in KB, or null if the request fails.
- */
+/** Fetch repo size in KB via the GitHub REST API. Returns null on failure. */
 export async function fetchRepoSize(
   owner: string,
   repo: string,
@@ -72,11 +44,7 @@ export async function fetchRepoSize(
 
   try {
     const response = await fetch(url, { headers: buildHeaders(token) });
-
-    if (!response.ok) {
-      return null;
-    }
-
+    if (!response.ok) return null;
     const data = (await response.json()) as { size?: number };
     return typeof data.size === "number" ? data.size : null;
   } catch {
@@ -85,12 +53,8 @@ export async function fetchRepoSize(
 }
 
 /**
- * Fetch the content of a single file from a GitHub repository.
- *
- * Uses the contents API: GET /repos/{owner}/{repo}/contents/{path}?ref={ref}
- * The response includes base64-encoded content for files < 1 MB.
- *
- * Returns the decoded file content as a string, or null if not found.
+ * Fetch a single file's content from GitHub via the contents API.
+ * Only works for files under 1 MB (GitHub API limitation).
  */
 export async function fetchFileContent(
   owner: string,
@@ -104,32 +68,22 @@ export async function fetchFileContent(
     .map((s) => encodeURIComponent(s))
     .join("/");
   let url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`;
-
-  if (ref) {
-    url += `?ref=${encodeURIComponent(ref)}`;
-  }
+  if (ref) url += `?ref=${encodeURIComponent(ref)}`;
 
   try {
     const response = await fetch(url, { headers: buildHeaders(token) });
-
-    if (!response.ok) {
-      return null;
-    }
+    if (!response.ok) return null;
 
     const data = (await response.json()) as {
       type?: string;
       content?: string;
       encoding?: string;
     };
-
-    if (data.type !== "file" || !data.content) {
-      return null;
-    }
+    if (data.type !== "file" || !data.content) return null;
 
     if (data.encoding === "base64") {
       return Buffer.from(data.content, "base64").toString("utf8");
     }
-
     return data.content;
   } catch {
     return null;

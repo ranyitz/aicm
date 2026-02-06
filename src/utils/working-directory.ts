@@ -1,6 +1,6 @@
 /**
- * Helper function to execute a function within a specific working directory
- * and ensure the original directory is always restored
+ * Execute an async function within a specific working directory,
+ * restoring the original cwd when done.
  */
 export async function withWorkingDirectory<T>(
   targetDir: string,

@@ -21,7 +21,7 @@ jobs:
       - name: Lint
         run: pnpm lint
       - name: Run knip
-        run: pnpm knip  
+        run: pnpm knip
   test:
     strategy:
       matrix:

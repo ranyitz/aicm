@@ -235,7 +235,6 @@ If `instructions` is also set, it's resolved relative to `rootDir`:
 // Looks for instructions in ./ai-config/instructions/
 // Looks for skills in ./ai-config/skills/
 
-
 // Looks for agents in ./ai-config/agents/
 ```
 

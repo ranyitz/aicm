@@ -94,15 +94,13 @@ describe("skills installation", () => {
 
     expect(stdout).toContain("Successfully installed 1 skill");
 
-    // Verify skill is installed to all targets
+    // Verify skill is installed to both targets (cursor uses .agents/skills, claude-code uses .claude/skills)
     expect(fileExists(".agents/skills/multi-skill/SKILL.md")).toBe(true);
     expect(fileExists(".claude/skills/multi-skill/SKILL.md")).toBe(true);
-    expect(fileExists(".cursor/skills/multi-skill/SKILL.md")).toBe(true);
 
     // Verify each target has .aicm.json
     expect(fileExists(".agents/skills/multi-skill/.aicm.json")).toBe(true);
     expect(fileExists(".claude/skills/multi-skill/.aicm.json")).toBe(true);
-    expect(fileExists(".cursor/skills/multi-skill/.aicm.json")).toBe(true);
   });
 
   test("clean removes aicm-managed skills", async () => {

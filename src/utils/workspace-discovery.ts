@@ -1,64 +1,52 @@
+/**
+ * Workspace package discovery using git ls-files.
+ */
+
 import { execSync } from "child_process";
-import path from "path";
+import path from "node:path";
 import { loadConfig, ResolvedConfig } from "./config";
 
-/**
- * Discover all packages with aicm configurations using git ls-files
- */
+export interface DiscoveredPackage {
+  relativePath: string;
+  absolutePath: string;
+  config: ResolvedConfig;
+}
+
 function findAicmFiles(rootDir: string): string[] {
   try {
     const output = execSync(
       "git ls-files --cached --others --exclude-standard aicm.json **/aicm.json",
-      {
-        cwd: rootDir,
-        encoding: "utf8",
-      },
+      { cwd: rootDir, encoding: "utf8" },
     );
-
     return output
       .trim()
       .split("\n")
       .filter(Boolean)
       .map((file: string) => path.resolve(rootDir, file));
   } catch {
-    // Fallback to manual search if git is not available
     return [];
   }
 }
 
-/**
- * Discover all packages with aicm configurations
- */
 export async function discoverPackagesWithAicm(
   rootDir: string,
-): Promise<
-  Array<{ relativePath: string; absolutePath: string; config: ResolvedConfig }>
-> {
+): Promise<DiscoveredPackage[]> {
   const aicmFiles = findAicmFiles(rootDir);
-  const packages: Array<{
-    relativePath: string;
-    absolutePath: string;
-    config: ResolvedConfig;
-  }> = [];
+  const packages: DiscoveredPackage[] = [];
 
   for (const aicmFile of aicmFiles) {
     const packageDir = path.dirname(aicmFile);
-    const relativePath = path.relative(rootDir, packageDir);
-
-    // Normalize to forward slashes for cross-platform compatibility
-    const normalizedRelativePath = relativePath.replace(/\\/g, "/");
+    const relativePath = path.relative(rootDir, packageDir).replace(/\\/g, "/");
 
     const config = await loadConfig(packageDir);
-
     if (config) {
       packages.push({
-        relativePath: normalizedRelativePath || ".",
+        relativePath: relativePath || ".",
         absolutePath: packageDir,
         config,
       });
     }
   }
 
-  // Sort packages by relativePath for deterministic order
   return packages.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
