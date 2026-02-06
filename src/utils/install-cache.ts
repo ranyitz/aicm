@@ -34,7 +34,7 @@ export interface InstallCacheEntry {
 /**
  * Get the base directory for aicm cache: ~/.aicm/
  */
-export function getAicmCacheDir(): string {
+function getAicmCacheDir(): string {
   return path.join(os.homedir(), ".aicm");
 }
 

@@ -279,9 +279,7 @@ export function mergeHooksConfigs(configs: HooksJson[]): HooksJson {
  * Rewrite command paths to point to the managed hooks directory (hooks/aicm/)
  * At this point, paths are already namespaced filenames from loadHooksFromDirectory
  */
-export function rewriteHooksConfigToManagedDir(
-  hooksConfig: HooksJson,
-): HooksJson {
+function rewriteHooksConfigToManagedDir(hooksConfig: HooksJson): HooksJson {
   const rewritten: HooksJson = {
     version: hooksConfig.version,
     hooks: {},
@@ -368,7 +366,7 @@ export function dedupeHookFiles(hookFiles: HookFile[]): HookFile[] {
  * Mapping from aicm hook types to Claude Code hook event names
  * See: https://code.claude.com/docs/en/hooks.md
  */
-export const AICM_TO_CLAUDE_CODE_HOOK_MAP: Partial<Record<HookType, string>> = {
+const AICM_TO_CLAUDE_CODE_HOOK_MAP: Partial<Record<HookType, string>> = {
   beforeShellExecution: "PreToolUse",
   afterShellExecution: "PostToolUse",
   beforeMCPExecution: "PreToolUse",
@@ -399,7 +397,7 @@ const AICM_TO_CLAUDE_CODE_MATCHER_MAP: Partial<
 /**
  * Convert aicm hooks config to Claude Code settings.json format
  */
-export function convertHooksToClaudeCodeFormat(
+function convertHooksToClaudeCodeFormat(
   hooksConfig: HooksJson,
 ): Record<
   string,

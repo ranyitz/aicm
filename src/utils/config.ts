@@ -38,7 +38,7 @@ export interface TargetsConfig {
   hooks?: string[];
 }
 
-export interface RawConfig {
+interface RawConfig {
   rootDir?: string;
   instructions?: string;
   targets?: TargetsInput;
@@ -104,7 +104,7 @@ export interface ResolvedConfig {
   hookFiles: HookFile[];
 }
 
-export const ALLOWED_CONFIG_KEYS = [
+const ALLOWED_CONFIG_KEYS = [
   "rootDir",
   "instructions",
   "targets",
@@ -128,7 +128,7 @@ export function detectWorkspacesFromPackageJson(cwd: string): boolean {
   }
 }
 
-export function resolveWorkspaces(
+function resolveWorkspaces(
   config: unknown,
   configFilePath: string,
   cwd: string,
@@ -149,7 +149,7 @@ export function resolveWorkspaces(
   return detectWorkspacesFromPackageJson(cwd);
 }
 
-export function applyDefaults(config: RawConfig, workspaces: boolean): Config {
+function applyDefaults(config: RawConfig, workspaces: boolean): Config {
   return {
     rootDir: config.rootDir,
     instructions: config.instructions,
@@ -161,7 +161,7 @@ export function applyDefaults(config: RawConfig, workspaces: boolean): Config {
   };
 }
 
-export function validateConfig(
+function validateConfig(
   config: unknown,
   configFilePath: string,
   cwd: string,
@@ -255,7 +255,7 @@ export function validateConfig(
  * Load skills from a skills/ directory
  * Each direct subdirectory containing a SKILL.md file is considered a skill
  */
-export async function loadSkillsFromDirectory(
+async function loadSkillsFromDirectory(
   directoryPath: string,
   source: "local" | "preset",
   presetName?: string,
@@ -297,7 +297,7 @@ export async function loadSkillsFromDirectory(
  * Load agents from an agents/ directory
  * Agents are markdown files (.md) with YAML frontmatter
  */
-export async function loadAgentsFromDirectory(
+async function loadAgentsFromDirectory(
   directoryPath: string,
   source: "local" | "preset",
   presetName?: string,
@@ -351,7 +351,7 @@ export function extractNamespaceFromPresetPath(presetPath: string): string[] {
   );
 }
 
-export async function resolvePresetPath(
+async function resolvePresetPath(
   presetPath: string,
   cwd: string,
 ): Promise<string | null> {
@@ -559,7 +559,7 @@ async function determineSparseCheckoutPaths(
   }
 }
 
-export async function loadPreset(
+async function loadPreset(
   presetPath: string,
   cwd: string,
 ): Promise<{
@@ -739,7 +739,7 @@ async function loadPresetRecursively(
   return result;
 }
 
-export async function loadAllInstructions(
+async function loadAllInstructions(
   config: Config,
   cwd: string,
 ): Promise<{
@@ -861,9 +861,7 @@ function mergePresetMcpServers(
   return newMcpServers;
 }
 
-export async function loadConfigFile(
-  searchFrom?: string,
-): Promise<CosmiconfigResult> {
+async function loadConfigFile(searchFrom?: string): Promise<CosmiconfigResult> {
   const explorer = cosmiconfig("aicm", {
     searchPlaces: ["aicm.json", "package.json"],
   });
@@ -930,16 +928,4 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
     hooks,
     hookFiles,
   };
-}
-
-export function saveConfig(config: Config, cwd?: string): boolean {
-  const workingDir = cwd || process.cwd();
-  const configPath = path.join(workingDir, "aicm.json");
-
-  try {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-    return true;
-  } catch {
-    return false;
-  }
 }

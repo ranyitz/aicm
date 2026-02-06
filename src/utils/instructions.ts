@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import fg from "fast-glob";
 
-export interface InstructionMetadata {
+interface InstructionMetadata {
   description: string;
   inline: boolean;
 }
@@ -19,7 +19,7 @@ export interface InstructionFile {
 
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
-export function parseInstructionFrontmatter(content: string): {
+function parseInstructionFrontmatter(content: string): {
   metadata: InstructionMetadata;
   body: string;
 } {

@@ -6,7 +6,7 @@ import { withWorkingDirectory } from "../utils/working-directory";
 import { removeInstructionsBlock } from "../utils/instructions-file";
 import { discoverPackagesWithAicm } from "../utils/workspace-discovery";
 
-export interface CleanOptions {
+interface CleanOptions {
   /**
    * Base directory to use instead of process.cwd()
    */
@@ -17,7 +17,7 @@ export interface CleanOptions {
   verbose?: boolean;
 }
 
-export interface CleanResult {
+interface CleanResult {
   success: boolean;
   error?: Error;
   cleanedCount: number;
@@ -451,9 +451,7 @@ function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
   return cleanedCount;
 }
 
-export async function cleanPackage(
-  options: CleanOptions = {},
-): Promise<CleanResult> {
+async function cleanPackage(options: CleanOptions = {}): Promise<CleanResult> {
   const cwd = options.cwd || process.cwd();
   const verbose = options.verbose || false;
 
@@ -499,7 +497,7 @@ export async function cleanPackage(
   });
 }
 
-export async function cleanWorkspaces(
+async function cleanWorkspaces(
   cwd: string,
   verbose: boolean = false,
 ): Promise<CleanResult> {
@@ -543,7 +541,7 @@ export async function cleanWorkspaces(
   };
 }
 
-export async function clean(options: CleanOptions = {}): Promise<CleanResult> {
+async function clean(options: CleanOptions = {}): Promise<CleanResult> {
   const cwd = options.cwd || process.cwd();
   const verbose = options.verbose || false;
 

@@ -5,7 +5,7 @@ import { loadConfig, ResolvedConfig } from "./config";
 /**
  * Discover all packages with aicm configurations using git ls-files
  */
-export function findAicmFiles(rootDir: string): string[] {
+function findAicmFiles(rootDir: string): string[] {
   try {
     const output = execSync(
       "git ls-files --cached --others --exclude-standard aicm.json **/aicm.json",

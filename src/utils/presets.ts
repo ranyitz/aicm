@@ -3,7 +3,7 @@ import { TargetsConfig } from "./config";
 /**
  * A target preset defines the standard paths for a specific coding agent/IDE
  */
-export interface TargetPreset {
+interface TargetPreset {
   instructions: string[];
   skills: string[];
   agents: string[];
@@ -17,7 +17,7 @@ export interface TargetPreset {
  * cursor: Based on https://cursor.com/docs/context/rules and https://cursor.com/docs/context/skills
  * claude-code: Based on https://code.claude.com/docs/en/memory.md, skills.md, sub-agents.md, mcp.md
  */
-export const BUILT_IN_PRESETS: Record<string, TargetPreset> = {
+const BUILT_IN_PRESETS: Record<string, TargetPreset> = {
   cursor: {
     instructions: ["AGENTS.md"],
     skills: [".cursor/skills"],
@@ -49,14 +49,14 @@ export interface TargetsConfigWithPresets extends TargetsConfig {
 /**
  * Get the list of available preset names
  */
-export function getAvailablePresetNames(): string[] {
+function getAvailablePresetNames(): string[] {
   return Object.keys(BUILT_IN_PRESETS);
 }
 
 /**
  * Validate that all preset names are recognized
  */
-export function validatePresetNames(
+function validatePresetNames(
   presetNames: string[],
   configFilePath: string,
 ): void {

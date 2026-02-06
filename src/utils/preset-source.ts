@@ -7,9 +7,9 @@
  *   - "npm"     – npm package name (everything else)
  */
 
-export type PresetSourceType = "github" | "local" | "npm";
+type PresetSourceType = "github" | "local" | "npm";
 
-export interface PresetSource {
+interface PresetSource {
   type: PresetSourceType;
   /** The raw preset string exactly as it appeared in aicm.json */
   raw: string;
