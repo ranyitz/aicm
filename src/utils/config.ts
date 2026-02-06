@@ -10,6 +10,25 @@ import {
 } from "./hooks";
 import { InstructionFile, loadInstructionsFromPath } from "./instructions";
 import { TargetsInput, validateTargetsInput, resolveTargets } from "./presets";
+import {
+  parsePresetSource,
+  GitHubPresetSource,
+  isGitHubPreset,
+} from "./preset-source";
+import {
+  getGitHubToken,
+  fetchRepoSize,
+  fetchFileContent,
+  SPARSE_CHECKOUT_THRESHOLD_KB,
+} from "./github";
+import { shallowClone, sparseClone } from "./git";
+import {
+  getCacheEntry,
+  setCacheEntry,
+  isCacheValid,
+  getRepoCachePath,
+  buildCacheKey,
+} from "./install-cache";
 
 export interface TargetsConfig {
   skills?: string[];
@@ -332,10 +351,17 @@ export function extractNamespaceFromPresetPath(presetPath: string): string[] {
   );
 }
 
-export function resolvePresetPath(
+export async function resolvePresetPath(
   presetPath: string,
   cwd: string,
-): string | null {
+): Promise<string | null> {
+  // GitHub URL presets: download/cache and return local path to aicm.json
+  const source = parsePresetSource(presetPath);
+
+  if (source.type === "github") {
+    return await resolveGitHubPreset(source);
+  }
+
   // Support specifying aicm.json directory and load the config from it
   if (!presetPath.endsWith(".json")) {
     presetPath = path.join(presetPath, "aicm.json");
@@ -361,6 +387,178 @@ export function resolvePresetPath(
   }
 }
 
+/**
+ * Resolve a GitHub preset URL to a local aicm.json path.
+ *
+ * Flow:
+ *   1. Check install cache -- if cached and valid, return immediately
+ *   2. Preflight: fetch repo size via GitHub API
+ *   3. Clone:
+ *      - Small repos (<= 50 MB): shallow clone (--depth 1)
+ *      - Large repos (> 50 MB): sparse checkout (only fetch needed paths)
+ *        For sparse checkout, first fetch aicm.json via API to determine rootDir,
+ *        then clone with only the necessary paths materialized.
+ *   4. Update cache and return path to aicm.json
+ */
+async function resolveGitHubPreset(
+  source: GitHubPresetSource,
+): Promise<string> {
+  const { owner, repo, ref, subpath } = source;
+  const cacheKey = buildCacheKey(owner, repo);
+
+  // 1. Check cache
+  const cached = await getCacheEntry(cacheKey);
+  if (cached && isCacheValid(cached)) {
+    const aicmJsonPath = subpath
+      ? path.join(cached.cachePath, subpath, "aicm.json")
+      : path.join(cached.cachePath, "aicm.json");
+
+    if (fs.existsSync(aicmJsonPath)) {
+      return aicmJsonPath;
+    }
+    // Cache exists but aicm.json is missing -- re-download
+  }
+
+  // 2. Preflight: check repo size
+  const token = getGitHubToken();
+  const repoSizeKB = await fetchRepoSize(owner, repo, token);
+
+  const destPath = getRepoCachePath(owner, repo);
+
+  // Clean up any previous incomplete cache
+  if (fs.existsSync(destPath)) {
+    await fs.remove(destPath);
+  }
+
+  await fs.ensureDir(path.dirname(destPath));
+
+  const useSparse =
+    repoSizeKB !== null && repoSizeKB > SPARSE_CHECKOUT_THRESHOLD_KB;
+
+  // 3. Clone
+  if (useSparse) {
+    // For sparse checkout, determine what paths to materialize
+    const sparsePaths = await determineSparseCheckoutPaths(
+      owner,
+      repo,
+      subpath,
+      ref,
+      token,
+    );
+
+    try {
+      await sparseClone(source.cloneUrl, destPath, sparsePaths, ref);
+    } catch {
+      // Fallback to shallow clone if sparse checkout fails
+      if (fs.existsSync(destPath)) {
+        await fs.remove(destPath);
+      }
+      await shallowClone(source.cloneUrl, destPath, ref);
+    }
+  } else {
+    await shallowClone(source.cloneUrl, destPath, ref);
+  }
+
+  // 4. Verify aicm.json exists
+  const aicmJsonPath = subpath
+    ? path.join(destPath, subpath, "aicm.json")
+    : path.join(destPath, "aicm.json");
+
+  if (!fs.existsSync(aicmJsonPath)) {
+    const location = subpath ? `${subpath}/` : "root of ";
+    throw new Error(
+      `No aicm.json found at ${location}${owner}/${repo}. ` +
+        `Make sure the repository contains an aicm.json configuration file at the specified path.`,
+    );
+  }
+
+  // 5. Update cache
+  await setCacheEntry(cacheKey, {
+    url: source.raw,
+    ref,
+    subpath,
+    cachedAt: new Date().toISOString(),
+    cachePath: destPath,
+  });
+
+  return aicmJsonPath;
+}
+
+/**
+ * Determine which paths to include in a sparse checkout.
+ *
+ * Fetches the aicm.json via GitHub Contents API to read rootDir,
+ * then returns the paths needed to materialize the preset content.
+ */
+async function determineSparseCheckoutPaths(
+  owner: string,
+  repo: string,
+  subpath: string | undefined,
+  ref: string | undefined,
+  token: string | null,
+): Promise<string[]> {
+  const configPath = subpath
+    ? path.posix.join(subpath, "aicm.json")
+    : "aicm.json";
+
+  const content = await fetchFileContent(owner, repo, configPath, ref, token);
+
+  if (!content) {
+    // If we can't fetch the config, materialize the whole subpath or root
+    return subpath ? [subpath] : ["."];
+  }
+
+  try {
+    const config = JSON.parse(content) as { rootDir?: string };
+    const rootDir = config.rootDir || ".";
+
+    // Security: validate rootDir doesn't escape the subpath
+    if (subpath) {
+      const resolvedRoot = path.posix.normalize(
+        path.posix.join(subpath, rootDir),
+      );
+      if (
+        !resolvedRoot.startsWith(subpath) &&
+        resolvedRoot !== subpath.replace(/\/$/, "")
+      ) {
+        throw new Error(
+          `rootDir "${rootDir}" in preset escapes the specified subpath "${subpath}". ` +
+            `rootDir must reference a path within the preset's directory.`,
+        );
+      }
+
+      const paths = [path.posix.join(subpath, "aicm.json")];
+
+      // Add rootDir path if it's different from subpath
+      const rootPath = path.posix.normalize(path.posix.join(subpath, rootDir));
+      if (rootPath !== subpath && rootPath !== path.posix.join(subpath, ".")) {
+        paths.push(rootPath);
+      } else {
+        paths.push(subpath);
+      }
+
+      return [...new Set(paths)];
+    }
+
+    // No subpath: materialize rootDir and aicm.json
+    const paths = ["aicm.json"];
+    if (rootDir !== "." && rootDir !== "./") {
+      paths.push(rootDir);
+    }
+    return paths.length > 0 ? paths : ["."];
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("rootDir") &&
+      error.message.includes("escapes")
+    ) {
+      throw error;
+    }
+    // JSON parse error or unexpected -- fall back to subpath or root
+    return subpath ? [subpath] : ["."];
+  }
+}
+
 export async function loadPreset(
   presetPath: string,
   cwd: string,
@@ -369,12 +567,13 @@ export async function loadPreset(
   rootDir: string;
   resolvedPath: string;
 }> {
-  const resolvedPresetPath = resolvePresetPath(presetPath, cwd);
+  const resolvedPresetPath = await resolvePresetPath(presetPath, cwd);
 
   if (!resolvedPresetPath) {
-    throw new Error(
-      `Preset not found: "${presetPath}". Make sure the package is installed or the path is correct.`,
-    );
+    const hint = isGitHubPreset(presetPath)
+      ? "Make sure the GitHub URL is correct and the repository contains an aicm.json."
+      : "Make sure the package is installed or the path is correct.";
+    throw new Error(`Preset not found: "${presetPath}". ${hint}`);
   }
 
   let presetConfig: RawConfig;
