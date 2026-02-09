@@ -165,7 +165,7 @@ After configuring your presets, run `npx aicm install` to install everything. Ad
 ```json
 {
   "scripts": {
-    "prepare": "npx aicm -y install"
+    "prepare": "npx -y aicm install"
   }
 }
 ```
