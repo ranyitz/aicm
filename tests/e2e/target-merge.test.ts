@@ -24,7 +24,7 @@ describe("target merge scenarios", () => {
     expect(readTestFile("CLAUDE.md").trim()).toBe("@AGENTS.md");
 
     // Skills in both
-    expect(fileExists(".agents/skills/test-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".cursor/skills/test-skill/SKILL.md")).toBe(true);
     expect(fileExists(".claude/skills/test-skill/SKILL.md")).toBe(true);
 
     // Agents in both
@@ -67,7 +67,7 @@ describe("target merge scenarios", () => {
     expect(fileExists("CLAUDE.md")).toBe(false);
 
     // Skills in both
-    expect(fileExists(".agents/skills/test-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".cursor/skills/test-skill/SKILL.md")).toBe(true);
     expect(fileExists(".opencode/skills/test-skill/SKILL.md")).toBe(true);
 
     // Agents in both
@@ -104,7 +104,8 @@ describe("target merge scenarios", () => {
     expect(fileExists("AGENTS.md")).toBe(true);
     expect(fileExists("CLAUDE.md")).toBe(false);
 
-    // Skills: .agents/skills only (deduplicated, cursor and codex both use it)
+    // Skills: cursor and codex paths are both installed
+    expect(fileExists(".cursor/skills/test-skill/SKILL.md")).toBe(true);
     expect(fileExists(".agents/skills/test-skill/SKILL.md")).toBe(true);
 
     // Agents: .cursor/agents only (codex has no agents)
@@ -155,7 +156,8 @@ describe("target merge scenarios", () => {
     expect(fileExists("AGENTS.md")).toBe(true);
     expect(readTestFile("CLAUDE.md").trim()).toBe("@AGENTS.md");
 
-    // Skills: .agents/skills, .claude/skills, .opencode/skills
+    // Skills: .cursor/skills, .claude/skills, .opencode/skills, .agents/skills (codex)
+    expect(fileExists(".cursor/skills/test-skill/SKILL.md")).toBe(true);
     expect(fileExists(".agents/skills/test-skill/SKILL.md")).toBe(true);
     expect(fileExists(".claude/skills/test-skill/SKILL.md")).toBe(true);
     expect(fileExists(".opencode/skills/test-skill/SKILL.md")).toBe(true);
@@ -203,6 +205,7 @@ describe("target merge scenarios", () => {
     expect(fileExists(".mcp.json")).toBe(false);
     expect(fileExists("opencode.json")).toBe(false);
     expect(fileExists(path.join(".codex", "config.toml"))).toBe(false);
+    expect(fileExists(".cursor/skills/test-skill")).toBe(false);
     expect(fileExists(".agents/skills/test-skill")).toBe(false);
     expect(fileExists(".opencode/skills/test-skill")).toBe(false);
     expect(fileExists(".cursor/agents/test-agent.md")).toBe(false);

@@ -7,7 +7,7 @@ import {
 } from "./helpers";
 
 describe("skills installation", () => {
-  test("installs local skills to .agents/skills/", async () => {
+  test("installs local skills to .cursor/skills/", async () => {
     await setupFromFixture("skills-basic");
 
     const { stdout } = await runCommand("install --ci");
@@ -15,21 +15,21 @@ describe("skills installation", () => {
     expect(stdout).toContain("Successfully installed 2 skills");
 
     // Verify skills are installed
-    expect(fileExists(".agents/skills/pdf-processing/SKILL.md")).toBe(true);
-    expect(fileExists(".agents/skills/pdf-processing/scripts/extract.py")).toBe(
+    expect(fileExists(".cursor/skills/pdf-processing/SKILL.md")).toBe(true);
+    expect(fileExists(".cursor/skills/pdf-processing/scripts/extract.py")).toBe(
       true,
     );
-    expect(fileExists(".agents/skills/code-review/SKILL.md")).toBe(true);
+    expect(fileExists(".cursor/skills/code-review/SKILL.md")).toBe(true);
 
     // Verify SKILL.md content is preserved
-    const skillContent = readTestFile(".agents/skills/pdf-processing/SKILL.md");
+    const skillContent = readTestFile(".cursor/skills/pdf-processing/SKILL.md");
     expect(skillContent).toContain("name: pdf-processing");
     expect(skillContent).toContain("Extract text and tables from PDF files");
 
     // Verify .aicm.json metadata is created (presence indicates aicm management)
-    expect(fileExists(".agents/skills/pdf-processing/.aicm.json")).toBe(true);
+    expect(fileExists(".cursor/skills/pdf-processing/.aicm.json")).toBe(true);
     const metadata = JSON.parse(
-      readTestFile(".agents/skills/pdf-processing/.aicm.json"),
+      readTestFile(".cursor/skills/pdf-processing/.aicm.json"),
     );
     expect(metadata.source).toBe("local");
   });
@@ -42,11 +42,11 @@ describe("skills installation", () => {
     expect(stdout).toContain("Successfully installed 1 skill");
 
     // Verify skill is installed
-    expect(fileExists(".agents/skills/data-analysis/SKILL.md")).toBe(true);
+    expect(fileExists(".cursor/skills/data-analysis/SKILL.md")).toBe(true);
 
     // Verify .aicm.json metadata includes preset info
     const metadata = JSON.parse(
-      readTestFile(".agents/skills/data-analysis/.aicm.json"),
+      readTestFile(".cursor/skills/data-analysis/.aicm.json"),
     );
     expect(metadata.source).toBe("preset");
     expect(metadata.presetName).toBe("./preset");
@@ -64,7 +64,7 @@ describe("skills installation", () => {
     expect(stderr).toContain("Using definition from ./preset-b");
 
     // Should use the last preset's version
-    const skillContent = readTestFile(".agents/skills/shared-skill/SKILL.md");
+    const skillContent = readTestFile(".cursor/skills/shared-skill/SKILL.md");
     expect(skillContent).toContain("Preset B version");
   });
 
@@ -78,13 +78,13 @@ describe("skills installation", () => {
     );
 
     // Verify root has all skills merged
-    const rootStructure = getDirectoryStructure(".agents/skills");
-    expect(rootStructure).toContain(".agents/skills/skill-a/");
-    expect(rootStructure).toContain(".agents/skills/skill-b/");
+    const rootStructure = getDirectoryStructure(".cursor/skills");
+    expect(rootStructure).toContain(".cursor/skills/skill-a/");
+    expect(rootStructure).toContain(".cursor/skills/skill-b/");
 
     // Verify each package has its own skills
-    expect(fileExists("package-a/.agents/skills/skill-a/SKILL.md")).toBe(true);
-    expect(fileExists("package-b/.agents/skills/skill-b/SKILL.md")).toBe(true);
+    expect(fileExists("package-a/.cursor/skills/skill-a/SKILL.md")).toBe(true);
+    expect(fileExists("package-b/.cursor/skills/skill-b/SKILL.md")).toBe(true);
   });
 
   test("installs skills to multiple targets", async () => {
@@ -94,12 +94,12 @@ describe("skills installation", () => {
 
     expect(stdout).toContain("Successfully installed 1 skill");
 
-    // Verify skill is installed to both targets (cursor uses .agents/skills, claude-code uses .claude/skills)
-    expect(fileExists(".agents/skills/multi-skill/SKILL.md")).toBe(true);
+    // Verify skill is installed to both targets (cursor uses .cursor/skills, claude-code uses .claude/skills)
+    expect(fileExists(".cursor/skills/multi-skill/SKILL.md")).toBe(true);
     expect(fileExists(".claude/skills/multi-skill/SKILL.md")).toBe(true);
 
     // Verify each target has .aicm.json
-    expect(fileExists(".agents/skills/multi-skill/.aicm.json")).toBe(true);
+    expect(fileExists(".cursor/skills/multi-skill/.aicm.json")).toBe(true);
     expect(fileExists(".claude/skills/multi-skill/.aicm.json")).toBe(true);
   });
 
@@ -108,15 +108,43 @@ describe("skills installation", () => {
 
     // First install
     await runCommand("install --ci");
-    expect(fileExists(".agents/skills/pdf-processing/SKILL.md")).toBe(true);
+    expect(fileExists(".cursor/skills/pdf-processing/SKILL.md")).toBe(true);
 
     // Then clean
     const { stdout } = await runCommand("clean --verbose");
     expect(stdout).toContain("Successfully cleaned");
 
     // Skills should be removed
-    expect(fileExists(".agents/skills/pdf-processing")).toBe(false);
-    expect(fileExists(".agents/skills/code-review")).toBe(false);
+    expect(fileExists(".cursor/skills/pdf-processing")).toBe(false);
+    expect(fileExists(".cursor/skills/code-review")).toBe(false);
+  });
+
+  // LEGACY(v0->v1): remove with namespaced-skill migration cleanup in install/clean.
+  test("install migrates legacy namespaced skills to flat layout", async () => {
+    await setupFromFixture("skills-legacy-namespaced");
+
+    expect(fileExists(".agents/skills/aicm/legacy-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".claude/skills/aicm/legacy-skill/SKILL.md")).toBe(true);
+
+    await runCommand("install --ci");
+
+    expect(fileExists(".agents/skills/aicm")).toBe(true);
+    expect(fileExists(".claude/skills/aicm")).toBe(false);
+    expect(fileExists(".cursor/skills/current-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".claude/skills/current-skill/SKILL.md")).toBe(true);
+  });
+
+  // LEGACY(v0->v1): remove with namespaced-skill migration cleanup in install/clean.
+  test("clean removes legacy namespaced skills", async () => {
+    await setupFromFixture("skills-legacy-namespaced");
+
+    expect(fileExists(".agents/skills/aicm/legacy-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".claude/skills/aicm/legacy-skill/SKILL.md")).toBe(true);
+
+    await runCommand("clean --verbose");
+
+    expect(fileExists(".agents/skills/aicm")).toBe(false);
+    expect(fileExists(".claude/skills/aicm")).toBe(false);
   });
 
   test("clean preserves non-aicm skills", async () => {
@@ -129,7 +157,7 @@ describe("skills installation", () => {
     const fs = await import("fs-extra");
     const path = await import("path");
     const { testDir } = await import("./helpers");
-    const manualSkillPath = path.join(testDir, ".agents/skills/manual-skill");
+    const manualSkillPath = path.join(testDir, ".cursor/skills/manual-skill");
     fs.ensureDirSync(manualSkillPath);
     fs.writeFileSync(
       path.join(manualSkillPath, "SKILL.md"),
@@ -140,9 +168,9 @@ describe("skills installation", () => {
     await runCommand("clean --verbose");
 
     // aicm skills should be removed
-    expect(fileExists(".agents/skills/pdf-processing")).toBe(false);
+    expect(fileExists(".cursor/skills/pdf-processing")).toBe(false);
 
     // Manual skill should be preserved
-    expect(fileExists(".agents/skills/manual-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".cursor/skills/manual-skill/SKILL.md")).toBe(true);
   });
 });

@@ -25,14 +25,15 @@ const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 /**
  * Parse YAML-like frontmatter from an instruction file.
+ * Returns null when no frontmatter is present.
  */
 function parseFrontmatter(content: string): {
   metadata: InstructionMetadata;
   body: string;
-} {
+} | null {
   const match = FRONTMATTER_REGEX.exec(content);
   if (!match) {
-    throw new Error("Instruction file missing frontmatter");
+    return null;
   }
 
   const raw = match[1];
@@ -98,11 +99,25 @@ export async function loadInstructionsFromPath(
 
   files.sort();
 
+  const isSingleFile = stats.isFile();
   const instructions: InstructionFile[] = [];
   for (const filePath of files) {
     const content = await fs.readFile(filePath, "utf8");
-    const { metadata, body } = parseFrontmatter(content);
-    const baseDir = stats.isFile()
+    const parsed = parseFrontmatter(content);
+
+    if (!parsed && !isSingleFile) {
+      throw new Error(
+        `Instruction file missing frontmatter: ${filePath}. ` +
+          `Directory-based instructions require frontmatter with at least a "description" field.`,
+      );
+    }
+
+    const body = parsed ? parsed.body : content.trim();
+    const metadata = parsed
+      ? parsed.metadata
+      : { description: "", inline: true };
+
+    const baseDir = isSingleFile
       ? path.dirname(instructionsPath)
       : instructionsPath;
     const relativePath = path.relative(baseDir, filePath).replace(/\\/g, "/");

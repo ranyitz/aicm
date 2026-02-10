@@ -27,7 +27,7 @@ test("merge instructions from presets with main configuration", async () => {
   const { stdout, code } = await runCommand("install --ci");
 
   expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 2 instructions");
+  expect(stdout).toContain("Successfully installed 3 instructions");
 
   const agentsContent = readTestFile("AGENTS.md");
   expect(agentsContent).toContain("Preset Instruction");

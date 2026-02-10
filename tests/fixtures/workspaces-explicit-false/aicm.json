@@ -1,6 +1,5 @@
 {
   "rootDir": "./",
   "workspaces": false,
-  "instructions": "INSTRUCTIONS.md",
   "targets": ["cursor"]
 }

@@ -20,7 +20,7 @@ describe("instructions installation", () => {
     expect(agentsContent).toContain("Testing Instructions");
   });
 
-  test("auto-detects instructions single file", async () => {
+  test("auto-detects AGENTS.src.md", async () => {
     await setupFromFixture("instructions-single-file");
 
     const { stdout, code } = await runCommand("install --ci");
@@ -30,6 +30,19 @@ describe("instructions installation", () => {
 
     const agentsContent = readTestFile("AGENTS.md");
     expect(agentsContent).toContain("Single File Instructions");
+  });
+
+  test("auto-detects both AGENTS.src.md and instructions directory", async () => {
+    await setupFromFixture("instructions-both-auto-detect");
+
+    const { stdout, code } = await runCommand("install --ci");
+
+    expect(code).toBe(0);
+    expect(stdout).toContain("Successfully installed 2 instructions");
+
+    const agentsContent = readTestFile("AGENTS.md");
+    expect(agentsContent).toContain("Single File Instructions");
+    expect(agentsContent).toContain("General Instructions");
   });
 
   test("progressive disclosure writes links and files", async () => {
@@ -45,10 +58,10 @@ describe("instructions installation", () => {
       "The following instructions are available:",
     );
     expect(agentsContent).toContain(
-      "- [Testing Instructions](.agents/aicm/testing.md): How to run tests",
+      "- [testing](.agents/instructions/testing.md): How to run tests",
     );
 
-    const referencedPath = path.join(".agents", "aicm", "testing.md");
+    const referencedPath = path.join(".agents", "instructions", "testing.md");
     expect(fileExists(referencedPath)).toBe(true);
     expect(readTestFile(referencedPath)).toContain("Testing Instructions");
   });
@@ -70,6 +83,34 @@ describe("instructions installation", () => {
     expect(fileExists("CLAUDE.md")).toBe(true);
     const claudeContent = readTestFile("CLAUDE.md");
     expect(claudeContent.trim()).toBe("@AGENTS.md");
+  });
+
+  test("instructionsFile allows custom filename", async () => {
+    await setupFromFixture("instructions-file-explicit");
+
+    const { stdout, code } = await runCommand("install --ci");
+
+    expect(code).toBe(0);
+    expect(stdout).toContain("Successfully installed 1 instruction");
+
+    const agentsContent = readTestFile("AGENTS.md");
+    expect(agentsContent).toContain("Custom Instructions File");
+    expect(agentsContent).toContain(
+      "These instructions come from a custom-named file.",
+    );
+  });
+
+  test("loads both explicit instructionsFile and instructions directory", async () => {
+    await setupFromFixture("instructions-both-explicit");
+
+    const { stdout, code } = await runCommand("install --ci");
+
+    expect(code).toBe(0);
+    expect(stdout).toContain("Successfully installed 2 instructions");
+
+    const agentsContent = readTestFile("AGENTS.md");
+    expect(agentsContent).toContain("Explicit File Instructions");
+    expect(agentsContent).toContain("Explicit Directory Instructions");
   });
 
   test("merges instructions from multiple presets with separators", async () => {

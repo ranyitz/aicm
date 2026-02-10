@@ -13,6 +13,7 @@ A CLI tool for managing AI agent configurations across projects.
 - [Getting Started](#getting-started)
   - [Creating a Preset](#creating-a-preset)
   - [Using a Preset](#using-a-preset)
+  - [End-to-End Example](#end-to-end-example)
 - [Features](#features)
   - [Instructions](#instructions)
   - [Skills](#skills)
@@ -40,7 +41,7 @@ Modern AI-powered IDEs like Cursor and agents like Claude Code allow developers 
 
 | Preset        | Environment | Instructions | Skills            | Subagents           | MCP                  | Hooks      |
 | ------------- | ----------- | ------------ | ----------------- | ------------------- | -------------------- | ---------- |
-| `cursor`      | Cursor IDE  | `AGENTS.md`  | `.agents/skills/` | `.cursor/agents/`   | `.cursor/mcp.json`   | `.cursor/` |
+| `cursor`      | Cursor IDE  | `AGENTS.md`  | `.cursor/skills/` | `.cursor/agents/`   | `.cursor/mcp.json`   | `.cursor/` |
 | `claude-code` | Claude Code | `CLAUDE.md`  | `.claude/skills/` | `.claude/agents/`   | `.mcp.json`          | `.claude/` |
 | `opencode`    | OpenCode    | `AGENTS.md`  | `.agents/skills/` | `.opencode/agents/` | `opencode.json`      | —          |
 | `codex`       | Codex CLI   | `AGENTS.md`  | `.agents/skills/` | —                   | `.codex/config.toml` | —          |
@@ -57,36 +58,35 @@ By default, aicm targets both `cursor` and `claude-code`. You can customize this
 
 ### Quick Start
 
-1. **Initialize aicm** in your project:
+1. **Create a reusable preset repository**:
 
-```bash
-npx aicm init
-```
-
-This creates an `aicm.json` config and a starter `instructions/` directory.
-
-2. **Edit `instructions/general.md`** with your project's conventions:
+Create an `aicm.json` and your shared instructions/skills, then push to GitHub:
 
 ```markdown
----
-description: Project coding standards
-inline: true
----
-
-## Coding Standards
-
-- Use TypeScript strict mode
-- Write tests for all new features
-- Use meaningful variable names
+my-ai-preset/
+├── aicm.json
+├── instructions/
+│ └── general.md
+└── skills/
+└── code-review/
+└── SKILL.md
 ```
 
-3. **Install the instructions** into your project so the coding agent can use them:
+2. **Consume the preset in your project**:
+
+Reference the GitHub repo in your project's `aicm.json`, then install:
+
+```json
+{
+  "presets": ["https://github.com/your-org/my-ai-preset"]
+}
+```
 
 ```bash
 npx aicm install
 ```
 
-Your instructions are now written to `AGENTS.md` and `CLAUDE.md`, ready for Cursor, Claude Code to use them.
+This generates `AGENTS.md`, `CLAUDE.md`, and target-specific output from the preset.
 
 ### Creating a Preset
 
@@ -111,7 +111,6 @@ Configure the preset's `aicm.json`:
 ```json
 {
   "rootDir": "./",
-  "instructions": "instructions",
   "mcpServers": {
     "my-mcp": { "url": "https://example.com/sse" }
   }
@@ -126,7 +125,7 @@ Push the repository to GitHub and reference it in any project's `aicm.json`:
 
 ### Using a Preset
 
-Presets can be referenced from three sources:
+Use a GitHub preset for normal team/shared usage:
 
 **GitHub URL**:
 
@@ -144,17 +143,7 @@ You can also point to a specific branch or subdirectory:
 }
 ```
 
-**npm package**:
-
-```bash
-npm install --save-dev @team/ai-preset
-```
-
-```json
-{ "presets": ["@team/ai-preset"] }
-```
-
-**Local path**:
+Use a local path when testing preset changes before pushing to GitHub:
 
 ```json
 { "presets": ["./presets/my-preset"] }
@@ -170,34 +159,36 @@ After configuring your presets, run `npx aicm install` to install everything. Ad
 }
 ```
 
-### Notes
+### End-to-End Example
 
-- Users may add `**/.cursor/*/aicm/**` and `**/.claude/*/aicm/**` to `.gitignore` to avoid tracking generated files.
-- Certain generated files, like `AGENTS.md` and `CLAUDE.md`, should be committed to your repository. These files may be updated by aicm, which will regenerate their contents (within the special `<!-- AICM:BEGIN -->` and `<!-- AICM:END -->` markers) as needed.
-- GitHub presets are cloned and cached locally. Authentication is resolved from `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token` for private repositories.
+Here is a complete example showing a **preset repo** and a **consumer repo** side by side.
 
-## Features
-
-### Instructions
-
-Instructions are markdown files that provide AI agents with context about your project. They replace the old `.mdc` rules system with a simpler, more portable format.
-
-Create an `instructions/` directory in your project (at the `rootDir` location):
+**Preset repo** (`github.com/acme/ai-preset`):
 
 ```
-my-project/
+acme-ai-preset/
 ├── aicm.json
-└── instructions/
-    ├── general.md
-    ├── typescript.md
-    └── testing.md
+├── instructions/
+│   ├── typescript.md
+│   └── testing.md
+└── skills/
+    └── code-review/
+        └── SKILL.md
 ```
 
-Each instruction file uses YAML frontmatter:
+`aicm.json`:
+
+```json
+{
+  "rootDir": "./"
+}
+```
+
+`instructions/typescript.md` (inline — always visible):
 
 ```markdown
 ---
-description: TypeScript coding conventions for this project
+description: TypeScript coding conventions
 inline: true
 ---
 
@@ -207,59 +198,171 @@ inline: true
 - Prefer interfaces over types
 ```
 
-**Frontmatter fields:**
+`instructions/testing.md` (progressive disclosure — loaded on demand):
 
-- `description` (required): Brief description of what this instruction covers
-- `inline` (optional, default: `false`): Whether to inline the full content or use progressive disclosure
+```markdown
+---
+description: Testing best practices — read when writing or reviewing tests
+inline: false
+---
 
-Configure your `aicm.json`:
+## Testing Best Practices
+
+- Write unit tests for all business logic
+- Use descriptive test names
+- Prefer integration tests for API endpoints
+```
+
+**Consumer repo** (`my-app`):
+
+```
+my-app/
+├── package.json
+├── aicm.json
+└── AGENTS.src.md
+```
+
+`aicm.json`:
 
 ```json
 {
   "rootDir": "./",
-  "instructions": "instructions"
+  "presets": ["https://github.com/acme/ai-preset"],
+  "targets": ["cursor"]
 }
 ```
 
-#### Output Modes
+`AGENTS.src.md`:
 
-**Inline Mode** (`inline: true`): The full content is inlined into `AGENTS.md`:
+```markdown
+## Project Guidelines
+
+- Use pnpm for package management
+- All PRs require at least one review
+```
+
+**Result after `npx aicm install`:**
+
+```
+my-app/
+├── AGENTS.md                              # Generated
+├── AGENTS.src.md                          # You write this
+├── .agents/
+│   ├── instructions/
+│   │   └── testing.md                     # Progressive disclosure file
+│   └── skills/
+│       └── code-review/
+│           └── SKILL.md                   # Copied from preset
+└── aicm.json
+```
+
+`AGENTS.md` (generated):
 
 ```markdown
 <!-- AICM:BEGIN -->
+<!-- WARNING: Everything between these markers will be overwritten during installation -->
+
+## Project Guidelines
+
+- Use pnpm for package management
+- All PRs require at least one review
+
+<!-- From: ai-preset -->
 
 ## TypeScript Conventions
 
 - Use strict mode
 - Prefer interfaces over types
 
+- [Testing Best Practices](.agents/instructions/testing.md): Testing best practices — read when writing or reviewing tests
+
 <!-- AICM:END -->
 ```
 
-**Progressive Disclosure** (`inline: false`): Only the description is inlined, with a link to the full content:
+Local instructions appear first, followed by preset instructions grouped under a `<!-- From: preset-name -->` comment. Inline instructions are embedded directly, while progressive disclosure instructions appear as links the agent can follow when relevant.
+
+### Notes
+
+- **Recommended:** Add generated files to `.gitignore`. Files like `AGENTS.md`, `CLAUDE.md`, and generated directories (`**/.cursor/*/aicm/**`, `**/.claude/*/aicm/**`, `**/.agents/*/instructions/**`) are derived artifacts. The repo should commit only source files (`aicm.json`, `AGENTS.src.md`, `skills/`, etc.) and regenerate the output locally via `aicm install` (e.g. through a `prepare` script). This keeps commits focused on intentional changes and avoids stale versions across repos.
+
+  ```gitignore
+  # AICM generated files
+  AGENTS.md
+  CLAUDE.md
+  **/.cursor/*/aicm/**
+  **/.claude/*/aicm/**
+  **/.agents/*/instructions/**
+  ```
+
+- **Alternative:** If you prefer the generated instructions to be visible in the repository without running `aicm install`, you can commit `AGENTS.md` and `CLAUDE.md`. Note that aicm regenerates content within the `<!-- AICM:BEGIN -->` and `<!-- AICM:END -->` markers on each install, so preset updates may produce diffs in unrelated PRs.
+- GitHub presets are cloned and cached locally. Authentication is resolved from `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token` for private repositories.
+
+## Features
+
+### Instructions
+
+Instructions are markdown files that provide AI agents with context about your project. They replace the old `.mdc` rules system with a simpler, more portable format.
+
+The simplest way is to write an `AGENTS.src.md` file in your project root — just plain markdown, no frontmatter needed:
+
+```markdown
+## Coding Standards
+
+- Use TypeScript strict mode
+- Write tests for all new features
+```
+
+When `rootDir` is set, aicm auto-detects `AGENTS.src.md` and uses it as an instruction source. The entire content is inlined into `AGENTS.md` / `CLAUDE.md` between the AICM markers:
 
 ```markdown
 <!-- AICM:BEGIN -->
 
-- [TypeScript Conventions](.agents/aicm/typescript.md): TypeScript coding conventions for this project
+## Coding Standards
+
+- Use TypeScript strict mode
+- Write tests for all new features
 
 <!-- AICM:END -->
 ```
 
-The full content is written to `.agents/aicm/typescript.md` for the agent to read on demand.
+#### Instructions Directory (Advanced)
 
-#### Single File Instructions
+For presets or projects that need multiple instruction files, you can use an `instructions/` directory instead:
 
-Instead of a directory, you can point `instructions` to a single `.md` file:
+```
+my-project/
+├── aicm.json
+└── instructions/
+    ├── typescript.md
+    ├── testing.md
+    └── security.md
+```
+
+Files in a directory **require frontmatter** with a `description` and an optional `inline` flag:
+
+- `description` (required): Brief description of what this instruction covers
+- `inline` (optional, default: `false`): Whether to inline the full content or use progressive disclosure
+
+**Inline Mode** (`inline: true`): The full content is inlined into `AGENTS.md`.
+
+**Progressive Disclosure** (`inline: false`): Only the description is inlined, with a link to the full content. The full file is written to `.agents/instructions/` for the agent to read on demand:
+
+```markdown
+<!-- AICM:BEGIN -->
+
+- [testing](.agents/instructions/testing.md): How to run and write tests
+
+<!-- AICM:END -->
+```
+
+When an `instructions/` directory exists under `rootDir`, aicm auto-detects it. If both `AGENTS.src.md` and `instructions/` exist, both are loaded. You can also point to a custom directory via the `instructionsDir` config field:
 
 ```json
 {
   "rootDir": "./",
-  "instructions": "INSTRUCTIONS.md"
+  "instructionsDir": "my-custom-instructions"
 }
 ```
-
-The content of the file is inlined directly into the target(s).
 
 ### Skills
 
@@ -299,7 +402,7 @@ Run the extraction script:
 scripts/extract.py
 ```
 
-Skills are installed to the directories specified by your target presets. With the default targets (`cursor` + `claude-code`), skills are installed to `.agents/skills/` and `.claude/skills/`.
+Skills are installed to the directories specified by your target presets. With the default targets (`cursor` + `claude-code`), skills are installed to `.cursor/skills/` and `.claude/skills/`.
 
 When installed, each skill directory is copied in its entirety (including `scripts/`, `references/`, `assets/` subdirectories). A `.aicm.json` file is added inside each installed skill to track that it's managed by aicm.
 
@@ -461,10 +564,11 @@ aicm automatically detects workspaces if your `package.json` contains a `workspa
 
 1. **Discover packages**: Automatically find all directories containing `aicm.json` files in your repository.
 2. **Install per package**: Install instructions, skills, and agents for each package individually in their respective directories.
-3. **Merge instructions**: Write a merged `AGENTS.md` at the repository root containing instructions from all packages.
+3. **Keep instructions package-scoped**: Do not merge package instructions into a root `AGENTS.md` in workspace mode.
 4. **Merge MCP servers**: Write a merged MCP config at the repository root containing all MCP servers from every package.
 5. **Merge skills**: Write merged skills to the repository root containing all skills from every package.
 6. **Merge agents**: Write merged agents to the repository root containing all agents from every package.
+7. **Merge hooks**: Write merged hooks to root-level hook targets.
 
 For example, in a workspace structure like:
 
@@ -480,13 +584,13 @@ For example, in a workspace structure like:
         └── aicm.json
 ```
 
-Running `npx aicm install` will install instructions for each package in their respective `AGENTS.md` files and merge them at the root.
+Running `npx aicm install` will install instructions for each package in their respective `AGENTS.md` files. It does not merge package instructions into a root `AGENTS.md` in workspace mode.
 
 **Why install in both places?**
 `aicm` installs configurations at both the package level AND the root level to support different workflows:
 
 - **Package-level context:** When a developer opens a specific package folder (e.g., `packages/frontend`) in their IDE, they get the specific instructions and MCP servers for that package.
-- **Root-level context:** When a developer opens the monorepo root, `aicm` ensures they have access to all instructions and MCP servers from all packages via the merged root configuration.
+- **Root-level context:** When a developer opens the monorepo root, `aicm` provides merged non-instruction outputs (MCP servers, skills, agents, and hooks) from all packages.
 
 ### Preset Packages in Workspaces
 
@@ -495,8 +599,7 @@ When you have a preset package within your workspace (a package that provides co
 ```json
 {
   "skipInstall": true,
-  "rootDir": "./",
-  "instructions": "instructions"
+  "rootDir": "./"
 }
 ```
 
@@ -509,18 +612,15 @@ Create an `aicm.json` file in your project root, or an `aicm` key in your projec
 ```json
 {
   "rootDir": "./",
-  "instructions": "instructions",
-  "targets": ["cursor", "claude-code"],
-  "presets": [],
-  "mcpServers": {},
-  "skipInstall": false
+  "targets": ["cursor", "claude-code"]
 }
 ```
 
 ### Configuration Options
 
-- **rootDir**: Directory containing your aicm structure. Must contain one or more of: `instructions`, `skills/`, `agents/`, or `hooks.json`. If not specified, aicm will only install from presets and will not pick up any local directories.
-- **instructions**: Path to the instructions source (a single `.md` file or a directory containing `.md` files), resolved relative to `rootDir`. Optional - if not set, no instructions are loaded from local files.
+- **rootDir**: Directory containing your aicm structure. Must contain one or more of: `AGENTS.src.md`, `instructions/`, `skills/`, `agents/`, or `hooks.json`. If not specified, aicm will only install from presets and will not pick up any local directories.
+- **instructionsFile**: Path to a single markdown instructions file, resolved relative to `rootDir`. No frontmatter needed — the entire content is inlined. Auto-detected as `AGENTS.src.md` when present. Can be used together with `instructionsDir`. Set this to use a custom filename (e.g. `"instructionsFile": "RULES.md"`).
+- **instructionsDir**: Path to a directory containing multiple instruction `.md` files (each with frontmatter), resolved relative to `rootDir`. Auto-detected as `instructions/` when present. Can be used together with `instructionsFile`. Set this to use a custom directory name.
 - **targets**: An array of target preset names specifying which environments to install into. Default: `["cursor", "claude-code"]`. Available presets: `cursor`, `claude-code`, `opencode`, `codex`.
 - **presets**: List of preset packages or paths to include.
 - **mcpServers**: MCP server configurations.
@@ -560,13 +660,12 @@ To combine your own instructions with preset instructions:
 ```json
 {
   "rootDir": "./ai-config",
-  "instructions": "instructions",
   "presets": ["@company/ai-preset"],
   "targets": ["cursor", "claude-code"]
 }
 ```
 
-This will load instructions from both `./ai-config/instructions/` and the preset, installing them to both `AGENTS.md` and `CLAUDE.md`.
+This will load instructions from `./ai-config/AGENTS.src.md`, `./ai-config/instructions/` (when present), and the preset, installing them to both `AGENTS.md` and `CLAUDE.md`.
 
 ### Directory Structure
 
@@ -575,9 +674,7 @@ aicm uses a convention-based directory structure:
 ```
 my-project/
 ├── aicm.json
-├── instructions/    # Instruction files (.md)
-│   ├── general.md
-│   └── testing.md
+├── AGENTS.src.md    # Your instructions (source)
 ├── skills/          # Agent Skills [optional]
 │   └── my-skill/
 │       └── SKILL.md

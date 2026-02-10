@@ -46,7 +46,8 @@ export interface PresetLoadResult {
 
 interface RawPresetConfig {
   rootDir?: string;
-  instructions?: string;
+  instructionsFile?: string;
+  instructionsDir?: string;
   presets?: string[];
   mcpServers?: MCPServers;
 }
@@ -234,10 +235,26 @@ async function loadPreset(
   const presetDir = path.dirname(resolvedPresetPath);
   const presetRootDir = path.resolve(presetDir, presetConfig.rootDir || "./");
 
-  const hasInstructions =
-    typeof presetConfig.instructions === "string"
-      ? fs.existsSync(path.resolve(presetRootDir, presetConfig.instructions))
-      : false;
+  // Auto-detect instruction sources under presetRootDir when not explicitly set
+  if (
+    typeof presetConfig.instructionsFile !== "string" &&
+    typeof presetConfig.instructionsDir !== "string"
+  ) {
+    if (fs.existsSync(path.join(presetRootDir, "AGENTS.src.md"))) {
+      presetConfig.instructionsFile = "AGENTS.src.md";
+    }
+    if (fs.existsSync(path.join(presetRootDir, "instructions"))) {
+      presetConfig.instructionsDir = "instructions";
+    }
+  }
+
+  const hasInstructionsFile = presetConfig.instructionsFile
+    ? fs.existsSync(path.resolve(presetRootDir, presetConfig.instructionsFile))
+    : false;
+  const hasInstructionsDir = presetConfig.instructionsDir
+    ? fs.existsSync(path.resolve(presetRootDir, presetConfig.instructionsDir))
+    : false;
+  const hasInstructions = hasInstructionsFile || hasInstructionsDir;
   const hasHooks = fs.existsSync(path.join(presetRootDir, "hooks.json"));
   const hasSkills = fs.existsSync(path.join(presetRootDir, "skills"));
   const hasAgents = fs.existsSync(path.join(presetRootDir, "agents"));
@@ -252,7 +269,7 @@ async function loadPreset(
     !hasNestedPresets
   ) {
     throw new Error(
-      `Preset "${presetPath}" must have at least one of: instructions, skills/, agents/, hooks.json, or presets`,
+      `Preset "${presetPath}" must have at least one of: instructionsFile/instructionsDir, skills/, agents/, hooks.json, or presets`,
     );
   }
 
@@ -288,10 +305,23 @@ export async function loadPresetRecursively(
     hookFiles: [],
   };
 
-  if (preset.config.instructions) {
+  if (preset.config.instructionsFile) {
     const instructionsPath = path.resolve(
       presetRootDir,
-      preset.config.instructions,
+      preset.config.instructionsFile,
+    );
+    result.instructions.push(
+      ...(await loadInstructionsFromPath(
+        instructionsPath,
+        "preset",
+        presetPath,
+      )),
+    );
+  }
+  if (preset.config.instructionsDir) {
+    const instructionsPath = path.resolve(
+      presetRootDir,
+      preset.config.instructionsDir,
     );
     result.instructions.push(
       ...(await loadInstructionsFromPath(

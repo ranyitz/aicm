@@ -57,7 +57,8 @@ export type { HookFile, HooksJson } from "./hooks";
 
 export interface Config {
   rootDir?: string;
-  instructions?: string;
+  instructionsFile?: string;
+  instructionsDir?: string;
   targets: TargetsConfig;
   presets?: string[];
   mcpServers?: MCPServers;
@@ -77,13 +78,36 @@ export interface ResolvedConfig {
 
 const ALLOWED_CONFIG_KEYS = [
   "rootDir",
-  "instructions",
+  "instructionsFile",
+  "instructionsDir",
   "targets",
   "presets",
   "mcpServers",
   "workspaces",
   "skipInstall",
 ] as const;
+
+const DEFAULT_INSTRUCTIONS_FILE = "AGENTS.src.md";
+
+/**
+ * Auto-detect instruction source under a root directory.
+ * Detects both AGENTS.src.md (single file) and instructions/ (directory) when present.
+ */
+function autoDetectInstructions(rootPath: string): {
+  instructionsFile?: string;
+  instructionsDir?: string;
+} {
+  const detected: { instructionsFile?: string; instructionsDir?: string } = {};
+
+  if (fs.existsSync(path.join(rootPath, DEFAULT_INSTRUCTIONS_FILE))) {
+    detected.instructionsFile = DEFAULT_INSTRUCTIONS_FILE;
+  }
+  if (fs.existsSync(path.join(rootPath, "instructions"))) {
+    detected.instructionsDir = "instructions";
+  }
+
+  return detected;
+}
 
 function validateConfig(
   config: unknown,
@@ -110,15 +134,44 @@ function validateConfig(
 
   const obj = config as Record<string, unknown>;
   const hasRootDir = typeof obj.rootDir === "string";
-  const hasInstructions = typeof obj.instructions === "string";
+  const hasExplicitFile = typeof obj.instructionsFile === "string";
+  const hasExplicitDir = typeof obj.instructionsDir === "string";
   const hasPresets =
     Array.isArray(obj.presets) && (obj.presets as unknown[]).length > 0;
 
-  if (hasInstructions) {
-    const baseDir = hasRootDir ? path.resolve(cwd, obj.rootDir as string) : cwd;
-    const instructionPath = path.resolve(baseDir, obj.instructions as string);
-    if (!fs.existsSync(instructionPath)) {
-      throw new Error(`Instructions path does not exist: ${instructionPath}`);
+  // Resolve the effective instruction source (explicit or auto-detected)
+  const baseDir = hasRootDir ? path.resolve(cwd, obj.rootDir as string) : cwd;
+  let resolvedFile: string | undefined;
+  let resolvedDir: string | undefined;
+
+  if (hasExplicitFile) {
+    resolvedFile = obj.instructionsFile as string;
+  }
+  if (hasExplicitDir) {
+    resolvedDir = obj.instructionsDir as string;
+  }
+  if (!hasExplicitFile && !hasExplicitDir && hasRootDir) {
+    const detected = autoDetectInstructions(
+      path.resolve(cwd, obj.rootDir as string),
+    );
+    resolvedFile = detected.instructionsFile;
+    resolvedDir = detected.instructionsDir;
+  }
+
+  const hasInstructions =
+    resolvedFile !== undefined || resolvedDir !== undefined;
+
+  // Validate explicit paths exist
+  if (hasExplicitFile) {
+    const filePath = path.resolve(baseDir, obj.instructionsFile as string);
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Instructions file does not exist: ${filePath}`);
+    }
+  }
+  if (hasExplicitDir) {
+    const dirPath = path.resolve(baseDir, resolvedDir as string);
+    if (!fs.existsSync(dirPath)) {
+      throw new Error(`Instructions path does not exist: ${dirPath}`);
     }
   }
 
@@ -131,9 +184,13 @@ function validateConfig(
       throw new Error(`Root path is not a directory: ${rootPath}`);
     }
 
-    const hasInstructionsSource = hasInstructions
-      ? fs.existsSync(path.resolve(rootPath, obj.instructions as string))
+    const hasResolvedFile = resolvedFile
+      ? fs.existsSync(path.resolve(rootPath, resolvedFile))
       : false;
+    const hasResolvedDir = resolvedDir
+      ? fs.existsSync(path.resolve(rootPath, resolvedDir))
+      : false;
+    const hasInstructionsSource = hasResolvedFile || hasResolvedDir;
     const hasHooks = fs.existsSync(path.join(rootPath, "hooks.json"));
     const hasSkills = fs.existsSync(path.join(rootPath, "skills"));
     const hasAgents = fs.existsSync(path.join(rootPath, "agents"));
@@ -152,7 +209,7 @@ function validateConfig(
     }
   } else if (!isWorkspaceMode && !hasPresets && !hasInstructions) {
     throw new Error(
-      `At least one of rootDir, instructions, or presets must be specified in config at ${configFilePath}`,
+      `At least one of rootDir, instructionsFile, instructionsDir, or presets must be specified in config at ${configFilePath}`,
     );
   }
 
@@ -194,7 +251,8 @@ function resolveWorkspacesFlag(
 
 interface RawConfig {
   rootDir?: string;
-  instructions?: string;
+  instructionsFile?: string;
+  instructionsDir?: string;
   targets?: string[];
   presets?: string[];
   mcpServers?: MCPServers;
@@ -202,10 +260,25 @@ interface RawConfig {
   skipInstall?: boolean;
 }
 
-function applyDefaults(raw: RawConfig, workspaces: boolean): Config {
+function applyDefaults(
+  raw: RawConfig,
+  workspaces: boolean,
+  cwd: string,
+): Config {
+  let instructionsFile = raw.instructionsFile;
+  let instructionsDir = raw.instructionsDir;
+
+  // Auto-detect when neither field is explicitly set
+  if (!instructionsFile && !instructionsDir && raw.rootDir) {
+    const detected = autoDetectInstructions(path.resolve(cwd, raw.rootDir));
+    instructionsFile = detected.instructionsFile;
+    instructionsDir = detected.instructionsDir;
+  }
+
   return {
     rootDir: raw.rootDir,
-    instructions: raw.instructions,
+    instructionsFile,
+    instructionsDir,
     targets: resolveTargets(raw.targets),
     presets: raw.presets || [],
     mcpServers: raw.mcpServers || {},
@@ -263,7 +336,7 @@ export async function loadConfig(cwd?: string): Promise<ResolvedConfig | null> {
 
   validateConfig(raw, configResult.filepath, workingDir, isWorkspaces);
 
-  const config = applyDefaults(raw, isWorkspaces);
+  const config = applyDefaults(raw, isWorkspaces, workingDir);
 
   const { instructions, skills, agents, mcpServers, hooks, hookFiles } =
     await loadAllResources(config, workingDir);
@@ -291,11 +364,19 @@ async function loadAllResources(
   let mergedMcpServers: MCPServers = { ...config.mcpServers };
   const allHooksConfigs: HooksJson[] = [];
 
-  // Load local instructions
-  if (config.instructions) {
-    const basePath = config.rootDir ? path.resolve(cwd, config.rootDir) : cwd;
-    const instructionsPath = path.resolve(basePath, config.instructions);
-    const local = await loadInstructionsFromPath(instructionsPath, "local");
+  // Load local instructions (single file and/or directory)
+  const basePath = config.rootDir ? path.resolve(cwd, config.rootDir) : cwd;
+  if (config.instructionsFile) {
+    const instructionsFilePath = path.resolve(
+      basePath,
+      config.instructionsFile,
+    );
+    const local = await loadInstructionsFromPath(instructionsFilePath, "local");
+    allInstructions.push(...local);
+  }
+  if (config.instructionsDir) {
+    const instructionsDirPath = path.resolve(basePath, config.instructionsDir);
+    const local = await loadInstructionsFromPath(instructionsDirPath, "local");
     allInstructions.push(...local);
   }
 

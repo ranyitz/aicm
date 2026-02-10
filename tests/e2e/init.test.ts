@@ -21,7 +21,6 @@ test("should create default config file", async () => {
   const config = JSON.parse(readTestFile("aicm.json"));
   expect(config).toEqual({
     rootDir: "./",
-    instructions: "instructions",
     targets: ["cursor", "claude-code"],
   });
 });
@@ -32,7 +31,7 @@ test("should not overwrite existing config", async () => {
   const customConfig = {
     rootDir: "./",
     targets: {
-      skills: [".agents/skills"],
+      skills: [".cursor/skills"],
       agents: [".agents/agents"],
       instructions: ["CLAUDE.md"],
       mcp: [".mcp.json"],

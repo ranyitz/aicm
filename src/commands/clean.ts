@@ -354,6 +354,38 @@ function cleanSkills(cwd: string, verbose: boolean): number {
           fs.removeSync(skillPath);
           if (verbose) log.info(chalk.gray(`  Removed skill ${skillPath}`));
           cleanedCount++;
+          continue;
+        }
+
+        // LEGACY(v0->v1): clean old namespaced skill layout (<target>/skills/aicm/<skill>/).
+        // Keep this block temporarily so `aicm clean` can remove pre-migration installs.
+        if (
+          entry.name === "aicm" &&
+          !fs.existsSync(path.join(skillPath, "SKILL.md"))
+        ) {
+          const namespacedEntries = fs.readdirSync(skillPath, {
+            withFileTypes: true,
+          });
+          for (const namespacedEntry of namespacedEntries) {
+            if (!namespacedEntry.isDirectory()) continue;
+            const namespacedSkillPath = path.join(
+              skillPath,
+              namespacedEntry.name,
+            );
+            if (fs.existsSync(path.join(namespacedSkillPath, ".aicm.json"))) {
+              fs.removeSync(namespacedSkillPath);
+              if (verbose)
+                log.info(chalk.gray(`  Removed skill ${namespacedSkillPath}`));
+              cleanedCount++;
+            }
+          }
+          if (
+            fs.existsSync(skillPath) &&
+            fs.readdirSync(skillPath).length === 0
+          ) {
+            fs.removeSync(skillPath);
+            if (verbose) log.info(chalk.gray(`  Removed ${skillPath}`));
+          }
         }
       }
       if (fs.readdirSync(dir).length === 0) {
@@ -423,7 +455,7 @@ function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
     path.join(cwd, ".cursor"),
     path.join(cwd, ".agents", "skills"),
     path.join(cwd, ".agents", "agents"),
-    path.join(cwd, ".agents", "aicm"),
+    path.join(cwd, ".agents", "instructions"),
     path.join(cwd, ".agents"),
     path.join(cwd, ".claude", "hooks"),
     path.join(cwd, ".claude", "skills"),
@@ -458,7 +490,8 @@ async function cleanPackage(
   return withWorkingDirectory(cwd, async () => {
     let cleanedCount = 0;
 
-    if (cleanFile(path.join(cwd, ".agents", "aicm"), verbose)) cleanedCount++;
+    if (cleanFile(path.join(cwd, ".agents", "instructions"), verbose))
+      cleanedCount++;
 
     if (cleanInstructionsBlock(path.join(cwd, "AGENTS.md"), verbose))
       cleanedCount++;

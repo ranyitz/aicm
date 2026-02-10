@@ -1,6 +1,5 @@
 {
   "rootDir": "./",
-  "instructions": "INSTRUCTIONS.md",
   "targets": ["cursor"],
   "mcpServers": {
     "aicm-managed-server": {

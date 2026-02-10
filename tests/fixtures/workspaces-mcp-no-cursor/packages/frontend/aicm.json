@@ -1,6 +1,5 @@
 {
   "rootDir": "./",
-  "instructions": "INSTRUCTIONS.md",
   "targets": ["claude-code"],
   "mcpServers": {
     "frontend-mcp": {

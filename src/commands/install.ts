@@ -17,10 +17,7 @@ import {
   writeHooksToCursor,
   writeHooksToClaudeCode,
 } from "../utils/hooks";
-import {
-  InstructionFile,
-  extractInstructionTitle,
-} from "../utils/instructions";
+import { InstructionFile } from "../utils/instructions";
 import { writeInstructionsFile } from "../utils/instructions-file";
 import { withWorkingDirectory } from "../utils/working-directory";
 import { isCIEnvironment } from "../utils/is-ci";
@@ -89,15 +86,13 @@ function buildInstructionsContent(instructions: InstructionFile[]): {
       }
       lines.push(instruction.content.trim());
     } else {
-      const title =
-        extractInstructionTitle(instruction.content) ?? instruction.name;
       const relativePath = path.posix.join(
         ".agents",
-        "aicm",
+        "instructions",
         `${instruction.name}.md`,
       );
       progressive.push({
-        title,
+        title: instruction.name,
         description: instruction.description,
         relativePath,
         content: instruction.content,
@@ -380,6 +375,18 @@ export function writeSkillsToTargets(
   for (const targetDir of targetDirs) {
     const resolvedDir = resolveTargetPath(targetDir, cwd);
     fs.ensureDirSync(resolvedDir);
+
+    // LEGACY(v0->v1): remove old namespaced skill layout (<target>/skills/aicm/<skill>).
+    // Keep this migration block temporarily to auto-clean historical installs.
+    const legacyNamespacedDir = path.join(resolvedDir, "aicm");
+    if (
+      fs.existsSync(legacyNamespacedDir) &&
+      fs.statSync(legacyNamespacedDir).isDirectory() &&
+      !fs.existsSync(path.join(legacyNamespacedDir, "SKILL.md"))
+    ) {
+      fs.removeSync(legacyNamespacedDir);
+    }
+
     for (const skill of skills) {
       const skillTargetPath = path.join(resolvedDir, skill.name);
       if (fs.existsSync(skillTargetPath)) fs.removeSync(skillTargetPath);

@@ -1,6 +1,5 @@
 {
   "skipInstall": true,
   "rootDir": "./",
-  "instructions": "INSTRUCTIONS.md",
   "targets": ["cursor"]
 }

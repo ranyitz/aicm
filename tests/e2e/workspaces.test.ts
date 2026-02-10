@@ -39,10 +39,8 @@ test("discover and install instructions from multiple packages", async () => {
   );
   expect(backendAgents).toContain("Backend Development Instructions");
 
-  // Root should aggregate package instructions
-  const rootAgents = readTestFile("AGENTS.md");
-  expect(rootAgents).toContain("Frontend Development Instructions");
-  expect(rootAgents).toContain("Backend Development Instructions");
+  // Workspace mode should not merge package instructions to root
+  expect(fileExists("AGENTS.md")).toBe(false);
 });
 
 test("show error when no packages found in workspaces", async () => {

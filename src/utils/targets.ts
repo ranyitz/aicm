@@ -22,7 +22,7 @@ interface TargetPreset {
 const BUILT_IN_PRESETS: Record<string, TargetPreset> = {
   cursor: {
     instructions: ["AGENTS.md"],
-    skills: [".agents/skills"],
+    skills: [".cursor/skills"],
     agents: [".cursor/agents"],
     mcp: [".cursor/mcp.json"],
     hooks: [".cursor"],

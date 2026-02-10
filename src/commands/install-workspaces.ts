@@ -6,7 +6,6 @@ import {
   AgentFile,
   MCPServers,
 } from "../utils/config";
-import { InstructionFile } from "../utils/instructions";
 import {
   HookFile,
   HooksJson,
@@ -20,7 +19,6 @@ import {
   installPackage,
   InstallOptions,
   InstallResult,
-  writeInstructionsToTargets,
   writeSkillsToTargets,
   writeSubagentsToTargets,
   warnPresetSkillCollisions,
@@ -34,14 +32,6 @@ import {
 import { log } from "../utils/log";
 
 type PkgInfo = { relativePath: string; config: ResolvedConfig };
-
-function mergeWorkspaceInstructions(packages: PkgInfo[]): InstructionFile[] {
-  const instructions: InstructionFile[] = [];
-  for (const pkg of packages) {
-    instructions.push(...(pkg.config.instructions ?? []));
-  }
-  return instructions;
-}
 
 function collectTargets(
   packages: PkgInfo[],
@@ -284,21 +274,6 @@ export async function installWorkspaces(
       verbose,
       dryRun,
     });
-
-    // Root-level merging
-    const workspaceInstructions = mergeWorkspaceInstructions(packages);
-    const instructionTargets = collectTargets(packages, "instructions");
-    if (
-      !dryRun &&
-      workspaceInstructions.length > 0 &&
-      instructionTargets.length > 0
-    ) {
-      writeInstructionsToTargets(
-        workspaceInstructions,
-        instructionTargets,
-        cwd,
-      );
-    }
 
     const workspaceSkills = mergeWorkspaceSkills(packages);
     const skillTargets = collectTargets(packages, "skills");
