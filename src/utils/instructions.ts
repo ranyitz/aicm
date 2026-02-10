@@ -67,14 +67,6 @@ function parseFrontmatter(content: string): {
 }
 
 /**
- * Extract the first markdown heading from content.
- */
-export function extractInstructionTitle(content: string): string | null {
-  const match = content.match(/^#{1,6}\s+(.+)$/m);
-  return match ? match[1].trim() : null;
-}
-
-/**
  * Load instruction files from a path (file or directory).
  */
 export async function loadInstructionsFromPath(

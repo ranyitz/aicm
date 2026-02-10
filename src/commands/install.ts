@@ -118,7 +118,7 @@ function buildInstructionsContent(instructions: InstructionFile[]): {
   };
 }
 
-export function writeInstructionsToTargets(
+function writeInstructionsToTargets(
   instructions: InstructionFile[],
   targetFiles: string[],
   cwd: string,
