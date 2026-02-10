@@ -1,8 +1,3 @@
----
-description: General development standards
-inline: true
----
-
 ## Development Standards
 
 - Use pnpm for package management
