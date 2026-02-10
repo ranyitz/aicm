@@ -61,7 +61,6 @@ Use `instructions/*.md` for content that should either always be visible to the 
 In the consumer project, configure `aicm.json`:
 
 ```json
-// aicm.json in the my-app repo
 {
   "rootDir": "./",
   "presets": ["https://github.com/acme/my-preset"],
@@ -93,7 +92,7 @@ my-app/
 └── aicm.json
 ```
 
-`AGENTS.md` (generated):
+**generated `AGENTS.md` file**
 
 ```markdown
 <!-- AICM:BEGIN -->
@@ -198,7 +197,15 @@ If omitted, defaults to:
 ["cursor", "claude-code"]
 ```
 
+### AGENTS.md
+
+`AGENTS.src.md` is your source file, and aicm generates target instruction files from it (for example `AGENTS.md` and `CLAUDE.md`).
+
+[`AGENTS.md`](https://agents.md/) is an open standard for sharing persistent project guidance with coding agents.
+
 ### Skills
+
+> [Agent Skills](https://agentskills.io)
 
 Put skills in `skills/<name>/SKILL.md`.
 Each skill directory is copied to target skill locations.
@@ -211,6 +218,8 @@ skills/
 
 ### Agents (_Subagents_)
 
+> [Cursor Subagents](https://cursor.com/docs/agent/subagents), [Claude Code Subagents](https://code.claude.com/docs/en/sub-agents)
+
 Put markdown file in `agents/*.md`.
 They are installed to the target agents directories.
 
@@ -220,6 +229,8 @@ agents/
 ```
 
 ### Hooks
+
+> [Cursor Hooks](https://cursor.com/docs/agent/hooks), [Claude Code Hooks](https://docs.claude.com/en/docs/claude-code/hooks)
 
 Define hooks with:
 
@@ -238,6 +249,8 @@ Local and preset hooks are merged and namespaced during install.
 ```
 
 ### MCP servers
+
+> [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/getting-started/intro)
 
 Define MCP servers in `aicm.json` and install them to target MCP files.
 
