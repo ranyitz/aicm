@@ -20,6 +20,8 @@ jobs:
         run: pnpm format:check
       - name: Lint
         run: pnpm lint
+      - name: Run knip
+        run: pnpm knip
   test:
     strategy:
       matrix:

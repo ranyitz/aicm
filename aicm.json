@@ -1,6 +1,6 @@
 {
-  "targets": ["cursor", "codex", "claude"],
   "rootDir": "./",
+  "targets": ["cursor", "claude-code"],
   "mcpServers": {
     "context7": {
       "command": "npx",

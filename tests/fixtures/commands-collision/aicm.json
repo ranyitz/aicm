@@ -1,4 +1,0 @@
-{
-  "presets": ["./preset-a", "./preset-b"],
-  "targets": ["cursor"]
-}

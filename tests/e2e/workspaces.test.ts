@@ -7,7 +7,7 @@ import {
   readTestFile,
 } from "./helpers";
 
-test("discover and install rules from multiple packages", async () => {
+test("discover and install instructions from multiple packages", async () => {
   await setupFromFixture("workspaces-npm-basic");
 
   const { stdout, code } = await runCommand("install --ci --verbose");
@@ -18,61 +18,29 @@ test("discover and install rules from multiple packages", async () => {
   expect(stdout).toContain("- packages/backend");
   expect(stdout).toContain("- packages/frontend");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ packages/backend (1 rules)");
-  expect(stdout).toContain("✅ packages/frontend (1 rules)");
-  expect(stdout).toContain("Successfully installed 2 rules across 2 packages");
-
-  // Check that rules were installed in both packages
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "frontend",
-        ".cursor",
-        "rules",
-        "aicm",
-        "frontend-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "backend",
-        ".cursor",
-        "rules",
-        "aicm",
-        "backend-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  // Verify rule content
-  const frontendRule = readTestFile(
-    path.join(
-      "packages",
-      "frontend",
-      ".cursor",
-      "rules",
-      "aicm",
-      "frontend-rule.mdc",
-    ),
+  expect(stdout).toContain("✅ packages/backend (1 instruction)");
+  expect(stdout).toContain("✅ packages/frontend (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 2 instructions across 2 packages",
   );
-  expect(frontendRule).toContain("Frontend Development Rules");
 
-  const backendRule = readTestFile(
-    path.join(
-      "packages",
-      "backend",
-      ".cursor",
-      "rules",
-      "aicm",
-      "backend-rule.mdc",
-    ),
+  // Check that instructions were installed in both packages
+  expect(fileExists(path.join("packages", "frontend", "AGENTS.md"))).toBe(true);
+  expect(fileExists(path.join("packages", "backend", "AGENTS.md"))).toBe(true);
+
+  // Verify instruction content
+  const frontendAgents = readTestFile(
+    path.join("packages", "frontend", "AGENTS.md"),
   );
-  expect(backendRule).toContain("Backend Development Rules");
+  expect(frontendAgents).toContain("Frontend Development Instructions");
+
+  const backendAgents = readTestFile(
+    path.join("packages", "backend", "AGENTS.md"),
+  );
+  expect(backendAgents).toContain("Backend Development Instructions");
+
+  // Workspace mode should not merge package instructions to root
+  expect(fileExists("AGENTS.md")).toBe(false);
 });
 
 test("show error when no packages found in workspaces", async () => {
@@ -92,11 +60,9 @@ test("install normally when workspaces is enabled on single package", async () =
   expect(code).toBe(0);
   expect(stdout).toContain("Found 1 packages with aicm configurations:");
   expect(stdout).toContain("- .");
-  expect(stdout).toContain("Successfully installed 1 rule");
+  expect(stdout).toContain("Successfully installed 1 instruction");
 
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "local-rule.mdc")),
-  ).toBe(true);
+  expect(fileExists(path.join("AGENTS.md"))).toBe(true);
 });
 
 test("handle partial configurations (some packages with configs, some without)", async () => {
@@ -111,44 +77,27 @@ test("handle partial configurations (some packages with configs, some without)",
   expect(stdout).toContain("- packages/also-with-config");
   expect(stdout).not.toContain("- packages/without-config");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ packages/with-config (1 rules)");
-  expect(stdout).toContain("✅ packages/also-with-config (1 rules)");
-  expect(stdout).toContain("Successfully installed 2 rules across 2 packages");
+  expect(stdout).toContain("✅ packages/with-config (1 instruction)");
+  expect(stdout).toContain("✅ packages/also-with-config (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 2 instructions across 2 packages",
+  );
 
-  // Check that rules were installed only in packages with configs
+  // Check that instructions were installed only in packages with configs
+  expect(fileExists(path.join("packages", "with-config", "AGENTS.md"))).toBe(
+    true,
+  );
   expect(
-    fileExists(
-      path.join(
-        "packages",
-        "with-config",
-        ".cursor",
-        "rules",
-        "aicm",
-        "package-one-rule.mdc",
-      ),
-    ),
+    fileExists(path.join("packages", "also-with-config", "AGENTS.md")),
   ).toBe(true);
 
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "also-with-config",
-        ".cursor",
-        "rules",
-        "aicm",
-        "package-three-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  // Verify no rules were installed in the package without config
-  expect(fileExists(path.join("packages", "without-config", ".cursor"))).toBe(
+  // Verify no instructions were installed in the package without config
+  expect(fileExists(path.join("packages", "without-config", "AGENTS.md"))).toBe(
     false,
   );
 });
 
-test("discover and install rules from deeply nested workspaces structure", async () => {
+test("discover and install instructions from deeply nested workspaces structure", async () => {
   await setupFromFixture("workspaces-npm-nested");
 
   const { stdout, code } = await runCommand("install --ci --verbose");
@@ -160,46 +109,20 @@ test("discover and install rules from deeply nested workspaces structure", async
   expect(stdout).toContain("- packages/ui");
   expect(stdout).toContain("- tools/build");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ apps/web (1 rules)");
-  expect(stdout).toContain("✅ packages/ui (1 rules)");
-  expect(stdout).toContain("✅ tools/build (1 rules)");
-  expect(stdout).toContain("Successfully installed 3 rules across 3 packages");
+  expect(stdout).toContain("✅ apps/web (1 instruction)");
+  expect(stdout).toContain("✅ packages/ui (1 instruction)");
+  expect(stdout).toContain("✅ tools/build (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 3 instructions across 3 packages",
+  );
 
-  // Check that rules were installed in all nested packages
-  expect(
-    fileExists(
-      path.join("apps", "web", ".cursor", "rules", "aicm", "web-app-rule.mdc"),
-    ),
-  ).toBe(true);
-
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "ui",
-        ".cursor",
-        "rules",
-        "aicm",
-        "ui-components-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  expect(
-    fileExists(
-      path.join(
-        "tools",
-        "build",
-        ".cursor",
-        "rules",
-        "aicm",
-        "build-tools-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
+  // Check that instructions were installed in all nested packages
+  expect(fileExists(path.join("apps", "web", "AGENTS.md"))).toBe(true);
+  expect(fileExists(path.join("packages", "ui", "AGENTS.md"))).toBe(true);
+  expect(fileExists(path.join("tools", "build", "AGENTS.md"))).toBe(true);
 });
 
-test("discover and install rules from Bazel workspaces", async () => {
+test("discover and install instructions from Bazel workspaces", async () => {
   await setupFromFixture("workspaces-bazel-basic");
 
   const { stdout, code } = await runCommand("install --ci --verbose");
@@ -210,39 +133,18 @@ test("discover and install rules from Bazel workspaces", async () => {
   expect(stdout).toContain("- services/api");
   expect(stdout).toContain("- services/worker");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ services/api (1 rules)");
-  expect(stdout).toContain("✅ services/worker (1 rules)");
-  expect(stdout).toContain("Successfully installed 2 rules across 2 packages");
+  expect(stdout).toContain("✅ services/api (1 instruction)");
+  expect(stdout).toContain("✅ services/worker (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 2 instructions across 2 packages",
+  );
 
-  // Check that rules were installed in both Bazel services
-  expect(
-    fileExists(
-      path.join(
-        "services",
-        "api",
-        ".cursor",
-        "rules",
-        "aicm",
-        "api-service-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  expect(
-    fileExists(
-      path.join(
-        "services",
-        "worker",
-        ".cursor",
-        "rules",
-        "aicm",
-        "worker-service-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
+  // Check that instructions were installed in both Bazel services
+  expect(fileExists(path.join("services", "api", "AGENTS.md"))).toBe(true);
+  expect(fileExists(path.join("services", "worker", "AGENTS.md"))).toBe(true);
 });
 
-test("discover and install rules from mixed workspaces + Bazel structure", async () => {
+test("discover and install instructions from mixed workspaces + Bazel structure", async () => {
   await setupFromFixture("workspaces-mixed");
 
   const { stdout, code } = await runCommand("install --ci --verbose");
@@ -253,31 +155,18 @@ test("discover and install rules from mixed workspaces + Bazel structure", async
   expect(stdout).toContain("- frontend");
   expect(stdout).toContain("- backend-service");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ frontend (1 rules)");
-  expect(stdout).toContain("✅ backend-service (1 rules)");
-  expect(stdout).toContain("Successfully installed 2 rules across 2 packages");
+  expect(stdout).toContain("✅ frontend (1 instruction)");
+  expect(stdout).toContain("✅ backend-service (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 2 instructions across 2 packages",
+  );
 
-  // Check that rules were installed in both mixed package types
-  expect(
-    fileExists(
-      path.join("frontend", ".cursor", "rules", "aicm", "frontend-rule.mdc"),
-    ),
-  ).toBe(true);
-
-  expect(
-    fileExists(
-      path.join(
-        "backend-service",
-        ".cursor",
-        "rules",
-        "aicm",
-        "backend-service-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
+  // Check that instructions were installed in both mixed package types
+  expect(fileExists(path.join("frontend", "AGENTS.md"))).toBe(true);
+  expect(fileExists(path.join("backend-service", "AGENTS.md"))).toBe(true);
 });
 
-test("handle package missing rules gracefully", async () => {
+test("handle package missing instructions gracefully", async () => {
   await setupFromFixture("workspaces-error-scenarios");
 
   const { stdout, code } = await runCommand("install --ci --verbose");
@@ -288,18 +177,14 @@ test("handle package missing rules gracefully", async () => {
   expect(stdout).toContain("- valid-package");
   expect(stdout).toContain("- missing-rule");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ valid-package (1 rules)");
-  expect(stdout).toContain("✅ missing-rule (0 rules)");
+  expect(stdout).toContain("✅ valid-package (1 instruction)");
+  expect(stdout).toContain("✅ missing-rule (0 instructions)");
 
   // Check that the valid package still installed successfully
-  expect(
-    fileExists(
-      path.join("valid-package", ".cursor", "rules", "aicm", "valid-rule.mdc"),
-    ),
-  ).toBe(true);
+  expect(fileExists(path.join("valid-package", "AGENTS.md"))).toBe(true);
 
   // Check that the error package did not install anything
-  expect(fileExists(path.join("missing-rule", ".cursor"))).toBe(false);
+  expect(fileExists(path.join("missing-rule", "AGENTS.md"))).toBe(false);
 });
 
 test("work quietly by default without verbose flag", async () => {
@@ -311,8 +196,10 @@ test("work quietly by default without verbose flag", async () => {
   expect(stdout).not.toContain("🔍 Discovering packages...");
   expect(stdout).not.toContain("Found 2 packages with aicm configurations:");
   expect(stdout).not.toContain("📦 Installing configurations...");
-  expect(stdout).not.toContain("✅ packages/backend (1 rules)");
-  expect(stdout).toContain("Successfully installed 2 rules across 2 packages");
+  expect(stdout).not.toContain("✅ packages/backend (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 2 instructions across 2 packages",
+  );
 });
 
 test("automatically detect workspaces from package.json", async () => {
@@ -326,61 +213,30 @@ test("automatically detect workspaces from package.json", async () => {
   expect(stdout).toContain("- packages/backend");
   expect(stdout).toContain("- packages/frontend");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ packages/backend (1 rules)");
-  expect(stdout).toContain("✅ packages/frontend (1 rules)");
-  expect(stdout).toContain("Successfully installed 2 rules across 2 packages");
-
-  // Check that rules were installed in both packages
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "frontend",
-        ".cursor",
-        "rules",
-        "aicm",
-        "frontend-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "backend",
-        ".cursor",
-        "rules",
-        "aicm",
-        "backend-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  // Verify rule content
-  const frontendRule = readTestFile(
-    path.join(
-      "packages",
-      "frontend",
-      ".cursor",
-      "rules",
-      "aicm",
-      "frontend-rule.mdc",
-    ),
+  expect(stdout).toContain("✅ packages/backend (1 instruction)");
+  expect(stdout).toContain("✅ packages/frontend (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 2 instructions across 2 packages",
   );
-  expect(frontendRule).toContain("Frontend Development Rules (Auto-detected)");
 
-  const backendRule = readTestFile(
-    path.join(
-      "packages",
-      "backend",
-      ".cursor",
-      "rules",
-      "aicm",
-      "backend-rule.mdc",
-    ),
+  // Check that instructions were installed in both packages
+  expect(fileExists(path.join("packages", "frontend", "AGENTS.md"))).toBe(true);
+  expect(fileExists(path.join("packages", "backend", "AGENTS.md"))).toBe(true);
+
+  // Verify instruction content
+  const frontendAgents = readTestFile(
+    path.join("packages", "frontend", "AGENTS.md"),
   );
-  expect(backendRule).toContain("Backend Development Rules (Auto-detected)");
+  expect(frontendAgents).toContain(
+    "Frontend Development Instructions (Auto-detected)",
+  );
+
+  const backendAgents = readTestFile(
+    path.join("packages", "backend", "AGENTS.md"),
+  );
+  expect(backendAgents).toContain(
+    "Backend Development Instructions (Auto-detected)",
+  );
 });
 
 test("explicit workspaces: false overrides auto-detection from package.json", async () => {
@@ -392,21 +248,17 @@ test("explicit workspaces: false overrides auto-detection from package.json", as
   expect(stdout).not.toContain("🔍 Discovering packages...");
   expect(stdout).not.toContain("Found");
   expect(stdout).not.toContain("📦 Installing configurations...");
-  expect(stdout).toContain("Successfully installed 1 rule");
+  expect(stdout).toContain("Successfully installed 1 instruction");
 
-  // Check that rule was installed in root directory, not as workspace
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "main-rule.mdc")),
-  ).toBe(true);
+  // Check that instruction was installed in root directory, not as workspace
+  expect(fileExists(path.join("AGENTS.md"))).toBe(true);
 
   // Check that no workspace packages were processed
   expect(fileExists(path.join("packages", "frontend", ".cursor"))).toBe(false);
 
   // Verify rule content
-  const mainRule = readTestFile(
-    path.join(".cursor", "rules", "aicm", "main-rule.mdc"),
-  );
-  expect(mainRule).toContain("Main Rule (Explicit False)");
+  const rootAgents = readTestFile("AGENTS.md");
+  expect(rootAgents).toContain("Main Instruction (Explicit False)");
 });
 
 test("automatically detect workspaces when no root config file exists", async () => {
@@ -420,61 +272,30 @@ test("automatically detect workspaces when no root config file exists", async ()
   expect(stdout).toContain("- packages/backend");
   expect(stdout).toContain("- packages/frontend");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ packages/backend (1 rules)");
-  expect(stdout).toContain("✅ packages/frontend (1 rules)");
-  expect(stdout).toContain("Successfully installed 2 rules across 2 packages");
-
-  // Check that rules were installed in both packages
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "frontend",
-        ".cursor",
-        "rules",
-        "aicm",
-        "frontend-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "backend",
-        ".cursor",
-        "rules",
-        "aicm",
-        "backend-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  // Verify rule content
-  const frontendRule = readTestFile(
-    path.join(
-      "packages",
-      "frontend",
-      ".cursor",
-      "rules",
-      "aicm",
-      "frontend-rule.mdc",
-    ),
+  expect(stdout).toContain("✅ packages/backend (1 instruction)");
+  expect(stdout).toContain("✅ packages/frontend (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 2 instructions across 2 packages",
   );
-  expect(frontendRule).toContain("Frontend Development Rules (No Config)");
 
-  const backendRule = readTestFile(
-    path.join(
-      "packages",
-      "backend",
-      ".cursor",
-      "rules",
-      "aicm",
-      "backend-rule.mdc",
-    ),
+  // Check that instructions were installed in both packages
+  expect(fileExists(path.join("packages", "frontend", "AGENTS.md"))).toBe(true);
+  expect(fileExists(path.join("packages", "backend", "AGENTS.md"))).toBe(true);
+
+  // Verify instruction content
+  const frontendAgents = readTestFile(
+    path.join("packages", "frontend", "AGENTS.md"),
   );
-  expect(backendRule).toContain("Backend Development Rules (No Config)");
+  expect(frontendAgents).toContain(
+    "Frontend Development Instructions (No Config)",
+  );
+
+  const backendAgents = readTestFile(
+    path.join("packages", "backend", "AGENTS.md"),
+  );
+  expect(backendAgents).toContain(
+    "Backend Development Instructions (No Config)",
+  );
 
   // Verify that no root config file exists
   expect(fileExists("aicm.json")).toBe(false);
@@ -491,64 +312,29 @@ test("allow empty root config in workspace mode", async () => {
   expect(stdout).toContain("- packages/backend");
   expect(stdout).toContain("- packages/frontend");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ packages/backend (1 rules)");
-  expect(stdout).toContain("✅ packages/frontend (1 rules)");
-  expect(stdout).toContain("Successfully installed 2 rules across 2 packages");
-
-  // Check that rules were installed in both packages
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "frontend",
-        ".cursor",
-        "rules",
-        "aicm",
-        "frontend-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  expect(
-    fileExists(
-      path.join(
-        "packages",
-        "backend",
-        ".cursor",
-        "rules",
-        "aicm",
-        "backend-rule.mdc",
-      ),
-    ),
-  ).toBe(true);
-
-  // Verify rule content
-  const frontendRule = readTestFile(
-    path.join(
-      "packages",
-      "frontend",
-      ".cursor",
-      "rules",
-      "aicm",
-      "frontend-rule.mdc",
-    ),
-  );
-  expect(frontendRule).toContain(
-    "Frontend Development Rules (Empty Root Config)",
+  expect(stdout).toContain("✅ packages/backend (1 instruction)");
+  expect(stdout).toContain("✅ packages/frontend (1 instruction)");
+  expect(stdout).toContain(
+    "Successfully installed 2 instructions across 2 packages",
   );
 
-  const backendRule = readTestFile(
-    path.join(
-      "packages",
-      "backend",
-      ".cursor",
-      "rules",
-      "aicm",
-      "backend-rule.mdc",
-    ),
+  // Check that instructions were installed in both packages
+  expect(fileExists(path.join("packages", "frontend", "AGENTS.md"))).toBe(true);
+  expect(fileExists(path.join("packages", "backend", "AGENTS.md"))).toBe(true);
+
+  // Verify instruction content
+  const frontendAgents = readTestFile(
+    path.join("packages", "frontend", "AGENTS.md"),
   );
-  expect(backendRule).toContain(
-    "Backend Development Rules (Empty Root Config)",
+  expect(frontendAgents).toContain(
+    "Frontend Development Instructions (Empty Root Config)",
+  );
+
+  const backendAgents = readTestFile(
+    path.join("packages", "backend", "AGENTS.md"),
+  );
+  expect(backendAgents).toContain(
+    "Backend Development Instructions (Empty Root Config)",
   );
 
   // Verify that root config file exists but has no rootDir or presets
@@ -616,39 +402,23 @@ test("skip installation for packages with skipInstall: true", async () => {
   expect(stdout).toContain("- packages/regular-package");
   expect(stdout).not.toContain("- packages/preset-package");
   expect(stdout).toContain("📦 Installing configurations...");
-  expect(stdout).toContain("✅ packages/regular-package (1 rules)");
+  expect(stdout).toContain("✅ packages/regular-package (1 instruction)");
   expect(stdout).not.toContain("✅ packages/preset-package");
-  expect(stdout).toContain("Successfully installed 1 rule");
+  expect(stdout).toContain("Successfully installed 1 instruction");
 
-  // Check that rules were installed only in the regular package
+  // Check that instructions were installed only in the regular package
   expect(
-    fileExists(
-      path.join(
-        "packages",
-        "regular-package",
-        ".cursor",
-        "rules",
-        "aicm",
-        "regular-rule.mdc",
-      ),
-    ),
+    fileExists(path.join("packages", "regular-package", "AGENTS.md")),
   ).toBe(true);
 
-  // Check that no rules were installed in the preset package
-  expect(fileExists(path.join("packages", "preset-package", ".cursor"))).toBe(
+  // Check that no instructions were installed in the preset package
+  expect(fileExists(path.join("packages", "preset-package", "AGENTS.md"))).toBe(
     false,
   );
 
-  // Verify rule content in regular package
-  const regularRule = readTestFile(
-    path.join(
-      "packages",
-      "regular-package",
-      ".cursor",
-      "rules",
-      "aicm",
-      "regular-rule.mdc",
-    ),
+  // Verify instruction content in regular package
+  const regularAgents = readTestFile(
+    path.join("packages", "regular-package", "AGENTS.md"),
   );
-  expect(regularRule).toContain("Regular Package Rule");
+  expect(regularAgents).toContain("Regular Package Instruction");
 });

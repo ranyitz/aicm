@@ -19,13 +19,25 @@ test("should create default config file", async () => {
   expect(fileExists("aicm.json")).toBe(true);
 
   const config = JSON.parse(readTestFile("aicm.json"));
-  expect(config).toEqual({ rootDir: "./", targets: ["cursor"] });
+  expect(config).toEqual({
+    rootDir: "./",
+    targets: ["cursor", "claude-code"],
+  });
 });
 
 test("should not overwrite existing config", async () => {
   await setupFromFixture("no-config");
 
-  const customConfig = { rootDir: "./", targets: ["windsurf"] };
+  const customConfig = {
+    rootDir: "./",
+    targets: {
+      skills: [".cursor/skills"],
+      agents: [".agents/agents"],
+      instructions: ["CLAUDE.md"],
+      mcp: [".mcp.json"],
+      hooks: [".cursor"],
+    },
+  };
   fs.writeJsonSync(path.join(testDir, "aicm.json"), customConfig);
 
   const { stdout, code } = await runCommand("init");

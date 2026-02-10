@@ -1,5 +1,0 @@
-{
-  "rootDir": "./",
-  "targets": ["cursor"],
-  "presets": ["./broken-preset.json"]
-}

@@ -1,0 +1,13 @@
+{
+  "rootDir": "./",
+  "targets": ["cursor", "claude-code", "opencode", "codex"],
+  "mcpServers": {
+    "test-mcp": {
+      "command": "npx",
+      "args": ["-y", "test-mcp-server"],
+      "env": {
+        "TEST_KEY": "test-value"
+      }
+    }
+  }
+}

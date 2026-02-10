@@ -1,0 +1,5 @@
+{
+  "rootDir": "./",
+  "instructionsFile": "RULES.md",
+  "targets": ["cursor"]
+}

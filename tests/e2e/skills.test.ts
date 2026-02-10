@@ -94,15 +94,13 @@ describe("skills installation", () => {
 
     expect(stdout).toContain("Successfully installed 1 skill");
 
-    // Verify skill is installed to all targets
+    // Verify skill is installed to both targets (cursor uses .cursor/skills, claude-code uses .claude/skills)
     expect(fileExists(".cursor/skills/multi-skill/SKILL.md")).toBe(true);
     expect(fileExists(".claude/skills/multi-skill/SKILL.md")).toBe(true);
-    expect(fileExists(".codex/skills/multi-skill/SKILL.md")).toBe(true);
 
     // Verify each target has .aicm.json
     expect(fileExists(".cursor/skills/multi-skill/.aicm.json")).toBe(true);
     expect(fileExists(".claude/skills/multi-skill/.aicm.json")).toBe(true);
-    expect(fileExists(".codex/skills/multi-skill/.aicm.json")).toBe(true);
   });
 
   test("clean removes aicm-managed skills", async () => {
@@ -119,6 +117,34 @@ describe("skills installation", () => {
     // Skills should be removed
     expect(fileExists(".cursor/skills/pdf-processing")).toBe(false);
     expect(fileExists(".cursor/skills/code-review")).toBe(false);
+  });
+
+  // LEGACY(v0->v1): remove with namespaced-skill migration cleanup in install/clean.
+  test("install migrates legacy namespaced skills to flat layout", async () => {
+    await setupFromFixture("skills-legacy-namespaced");
+
+    expect(fileExists(".agents/skills/aicm/legacy-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".claude/skills/aicm/legacy-skill/SKILL.md")).toBe(true);
+
+    await runCommand("install --ci");
+
+    expect(fileExists(".agents/skills/aicm")).toBe(true);
+    expect(fileExists(".claude/skills/aicm")).toBe(false);
+    expect(fileExists(".cursor/skills/current-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".claude/skills/current-skill/SKILL.md")).toBe(true);
+  });
+
+  // LEGACY(v0->v1): remove with namespaced-skill migration cleanup in install/clean.
+  test("clean removes legacy namespaced skills", async () => {
+    await setupFromFixture("skills-legacy-namespaced");
+
+    expect(fileExists(".agents/skills/aicm/legacy-skill/SKILL.md")).toBe(true);
+    expect(fileExists(".claude/skills/aicm/legacy-skill/SKILL.md")).toBe(true);
+
+    await runCommand("clean --verbose");
+
+    expect(fileExists(".agents/skills/aicm")).toBe(false);
+    expect(fileExists(".claude/skills/aicm")).toBe(false);
   });
 
   test("clean preserves non-aicm skills", async () => {

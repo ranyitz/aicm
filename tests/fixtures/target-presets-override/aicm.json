@@ -1,0 +1,10 @@
+{
+  "rootDir": "./",
+  "targets": ["cursor"],
+  "mcpServers": {
+    "test-server": {
+      "command": "echo",
+      "args": ["hello"]
+    }
+  }
+}

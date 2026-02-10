@@ -88,7 +88,7 @@ describe("agents installation", () => {
 
     expect(stdout).toContain("Successfully installed 1 agent");
 
-    // Verify agent is installed to both targets
+    // Verify agent is installed to both targets (cursor + claude-code)
     expect(fileExists(".cursor/agents/multi-agent.md")).toBe(true);
     expect(fileExists(".claude/agents/multi-agent.md")).toBe(true);
   });

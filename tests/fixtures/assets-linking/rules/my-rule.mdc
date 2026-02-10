@@ -1,7 +1,0 @@
----
-globs: *.ts
----
-
-# My Rule
-
-See [Example](./example.ts)

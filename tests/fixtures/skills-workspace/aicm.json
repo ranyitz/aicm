@@ -1,3 +1,4 @@
 {
-  "workspaces": true
+  "workspaces": true,
+  "targets": ["cursor"]
 }

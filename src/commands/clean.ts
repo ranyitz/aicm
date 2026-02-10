@@ -1,127 +1,223 @@
 import chalk from "chalk";
 import fs from "fs-extra";
 import path from "node:path";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { checkWorkspacesEnabled } from "../utils/config";
 import { withWorkingDirectory } from "../utils/working-directory";
-import { removeRulesBlock } from "../utils/rules-file-writer";
+import { removeInstructionsBlock } from "../utils/instructions-file";
 import { discoverPackagesWithAicm } from "../utils/workspace-discovery";
+import { log } from "../utils/log";
 
-export interface CleanOptions {
-  /**
-   * Base directory to use instead of process.cwd()
-   */
-  cwd?: string;
-  /**
-   * Show verbose output
-   */
-  verbose?: boolean;
-}
-
-export interface CleanResult {
+interface CleanResult {
   success: boolean;
-  error?: Error;
   cleanedCount: number;
 }
 
 function cleanFile(filePath: string, verbose: boolean): boolean {
   if (!fs.existsSync(filePath)) return false;
-
   try {
     fs.removeSync(filePath);
-    if (verbose) console.log(chalk.gray(`  Removed ${filePath}`));
+    if (verbose) log.info(chalk.gray(`  Removed ${filePath}`));
     return true;
   } catch {
-    console.warn(chalk.yellow(`Warning: Failed to remove ${filePath}`));
+    log.warn(`Warning: Failed to remove ${filePath}`);
     return false;
   }
 }
 
-function cleanRulesBlock(filePath: string, verbose: boolean): boolean {
+function cleanInstructionsBlock(filePath: string, verbose: boolean): boolean {
   if (!fs.existsSync(filePath)) return false;
-
   try {
     const content = fs.readFileSync(filePath, "utf8");
-    const cleanedContent = removeRulesBlock(content);
+    const cleaned = removeInstructionsBlock(content);
+    if (content === cleaned) return false;
 
-    if (content === cleanedContent) return false;
-
-    if (cleanedContent.trim() === "") {
+    if (cleaned.trim() === "") {
       fs.removeSync(filePath);
-      if (verbose) console.log(chalk.gray(`  Removed empty file ${filePath}`));
+      if (verbose) log.info(chalk.gray(`  Removed empty file ${filePath}`));
     } else {
-      fs.writeFileSync(filePath, cleanedContent);
+      fs.writeFileSync(filePath, cleaned);
       if (verbose)
-        console.log(chalk.gray(`  Cleaned rules block from ${filePath}`));
+        log.info(chalk.gray(`  Cleaned instructions block from ${filePath}`));
     }
     return true;
   } catch {
-    console.warn(chalk.yellow(`Warning: Failed to clean ${filePath}`));
+    log.warn(`Warning: Failed to clean ${filePath}`);
     return false;
   }
 }
 
 function cleanMcpServers(cwd: string, verbose: boolean): boolean {
-  const mcpPath = path.join(cwd, ".cursor", "mcp.json");
+  const mcpPaths = [
+    path.join(cwd, ".cursor", "mcp.json"),
+    path.join(cwd, ".mcp.json"),
+  ];
+  let cleanedAny = false;
+
+  for (const mcpPath of mcpPaths) {
+    if (!fs.existsSync(mcpPath)) continue;
+    try {
+      const content = fs.readJsonSync(mcpPath);
+      const servers = content.mcpServers;
+      if (!servers) continue;
+
+      let hasChanges = false;
+      const userServers: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(servers)) {
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          (value as Record<string, unknown>).aicm === true
+        ) {
+          hasChanges = true;
+        } else {
+          userServers[key] = value;
+        }
+      }
+
+      if (!hasChanges) continue;
+
+      if (
+        Object.keys(userServers).length === 0 &&
+        Object.keys(content).length === 1
+      ) {
+        fs.removeSync(mcpPath);
+        if (verbose) log.info(chalk.gray(`  Removed empty ${mcpPath}`));
+      } else {
+        content.mcpServers = userServers;
+        fs.writeJsonSync(mcpPath, content, { spaces: 2 });
+        if (verbose)
+          log.info(chalk.gray(`  Cleaned aicm MCP servers from ${mcpPath}`));
+      }
+      cleanedAny = true;
+    } catch {
+      log.warn(`Warning: Failed to clean MCP servers`);
+    }
+  }
+
+  return cleanedAny;
+}
+
+function cleanOpenCodeMcp(cwd: string, verbose: boolean): boolean {
+  const mcpPath = path.join(cwd, "opencode.json");
   if (!fs.existsSync(mcpPath)) return false;
 
   try {
     const content = fs.readJsonSync(mcpPath);
-    const mcpServers = content.mcpServers;
-
-    if (!mcpServers) return false;
+    const mcp = content.mcp as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (!mcp) return false;
 
     let hasChanges = false;
-    const newMcpServers: Record<string, unknown> = {};
-
-    for (const [key, value] of Object.entries(mcpServers)) {
+    const userServers: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(mcp)) {
       if (
         typeof value === "object" &&
         value !== null &&
-        "aicm" in value &&
-        value.aicm === true
+        (value as Record<string, unknown>).aicm === true
       ) {
         hasChanges = true;
       } else {
-        newMcpServers[key] = value;
+        userServers[key] = value;
       }
     }
 
     if (!hasChanges) return false;
 
-    // If no servers remain and no other properties, remove the file
     if (
-      Object.keys(newMcpServers).length === 0 &&
+      Object.keys(userServers).length === 0 &&
       Object.keys(content).length === 1
     ) {
       fs.removeSync(mcpPath);
-      if (verbose) console.log(chalk.gray(`  Removed empty ${mcpPath}`));
+      if (verbose) log.info(chalk.gray(`  Removed empty ${mcpPath}`));
     } else {
-      content.mcpServers = newMcpServers;
+      content.mcp = userServers;
       fs.writeJsonSync(mcpPath, content, { spaces: 2 });
       if (verbose)
-        console.log(chalk.gray(`  Cleaned aicm MCP servers from ${mcpPath}`));
+        log.info(chalk.gray(`  Cleaned aicm MCP servers from ${mcpPath}`));
     }
     return true;
   } catch {
-    console.warn(chalk.yellow(`Warning: Failed to clean MCP servers`));
+    log.warn(`Warning: Failed to clean OpenCode MCP servers`);
     return false;
   }
 }
 
-function cleanHooks(cwd: string, verbose: boolean): boolean {
+function cleanCodexMcp(cwd: string, verbose: boolean): boolean {
+  const mcpPath = path.join(cwd, ".codex", "config.toml");
+  if (!fs.existsSync(mcpPath)) return false;
+
+  try {
+    const rawContent = fs.readFileSync(mcpPath, "utf8");
+
+    // Detect aicm-managed servers from comment markers
+    const managedServerNames = new Set<string>();
+    const lines = rawContent.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === "# aicm:managed") {
+        const match = lines[i + 1]?.match(/^\[mcp_servers\.("?)(.+)\1\]$/);
+        if (match) managedServerNames.add(match[2]);
+      }
+    }
+
+    const config = parseToml(rawContent) as Record<string, unknown>;
+    const mcpServers = config.mcp_servers as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (!mcpServers) return false;
+
+    // Also detect legacy aicm property marker
+    for (const [key, value] of Object.entries(mcpServers)) {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        (value as Record<string, unknown>).aicm === true
+      ) {
+        managedServerNames.add(key);
+      }
+    }
+
+    if (managedServerNames.size === 0) return false;
+
+    const userServers: Record<string, Record<string, unknown>> = {};
+    for (const [key, value] of Object.entries(mcpServers)) {
+      if (!managedServerNames.has(key)) {
+        userServers[key] = value as Record<string, unknown>;
+      }
+    }
+
+    if (
+      Object.keys(userServers).length === 0 &&
+      Object.keys(config).length === 1
+    ) {
+      fs.removeSync(mcpPath);
+      if (verbose) log.info(chalk.gray(`  Removed empty ${mcpPath}`));
+    } else {
+      config.mcp_servers = userServers;
+      const tomlContent = stringifyToml(config);
+      fs.writeFileSync(mcpPath, tomlContent);
+      if (verbose)
+        log.info(chalk.gray(`  Cleaned aicm MCP servers from ${mcpPath}`));
+    }
+    return true;
+  } catch {
+    log.warn(`Warning: Failed to clean Codex MCP servers`);
+    return false;
+  }
+}
+
+function cleanCursorHooks(cwd: string, verbose: boolean): boolean {
   const hooksJsonPath = path.join(cwd, ".cursor", "hooks.json");
   const hooksDir = path.join(cwd, ".cursor", "hooks", "aicm");
-
   let hasChanges = false;
 
-  // Clean hooks directory
   if (fs.existsSync(hooksDir)) {
     fs.removeSync(hooksDir);
-    if (verbose) console.log(chalk.gray(`  Removed ${hooksDir}`));
+    if (verbose) log.info(chalk.gray(`  Removed ${hooksDir}`));
     hasChanges = true;
   }
 
-  // Clean hooks.json
   if (fs.existsSync(hooksJsonPath)) {
     try {
       const content: {
@@ -129,7 +225,6 @@ function cleanHooks(cwd: string, verbose: boolean): boolean {
         hooks?: Record<string, Array<{ command?: string }>>;
       } = fs.readJsonSync(hooksJsonPath);
 
-      // Filter out aicm-managed hooks (those pointing to hooks/aicm/)
       const userConfig: typeof content = {
         version: content.version || 1,
         hooks: {},
@@ -142,11 +237,7 @@ function cleanHooks(cwd: string, verbose: boolean): boolean {
             const userCommands = hookCommands.filter(
               (cmd) => !cmd.command || !cmd.command.includes("hooks/aicm/"),
             );
-
-            if (userCommands.length < hookCommands.length) {
-              removedAny = true;
-            }
-
+            if (userCommands.length < hookCommands.length) removedAny = true;
             if (userCommands.length > 0) {
               userConfig.hooks![hookType] = userCommands;
             }
@@ -157,157 +248,198 @@ function cleanHooks(cwd: string, verbose: boolean): boolean {
       if (removedAny) {
         const hasUserHooks =
           userConfig.hooks && Object.keys(userConfig.hooks).length > 0;
-
         if (!hasUserHooks) {
           fs.removeSync(hooksJsonPath);
-          if (verbose)
-            console.log(chalk.gray(`  Removed empty ${hooksJsonPath}`));
+          if (verbose) log.info(chalk.gray(`  Removed empty ${hooksJsonPath}`));
         } else {
           fs.writeJsonSync(hooksJsonPath, userConfig, { spaces: 2 });
           if (verbose)
-            console.log(
-              chalk.gray(`  Cleaned aicm hooks from ${hooksJsonPath}`),
-            );
+            log.info(chalk.gray(`  Cleaned aicm hooks from ${hooksJsonPath}`));
         }
         hasChanges = true;
       }
     } catch {
-      console.warn(chalk.yellow(`Warning: Failed to clean hooks.json`));
+      log.warn(`Warning: Failed to clean hooks.json`);
     }
   }
 
   return hasChanges;
 }
 
-/**
- * Clean aicm-managed skills from a skills directory
- * Only removes skills that have .aicm.json (presence indicates aicm management)
- */
-function cleanSkills(cwd: string, verbose: boolean): number {
-  let cleanedCount = 0;
+function cleanClaudeCodeHooks(cwd: string, verbose: boolean): boolean {
+  const settingsPath = path.join(cwd, ".claude", "settings.json");
+  const hooksDir = path.join(cwd, ".claude", "hooks", "aicm");
+  let hasChanges = false;
 
-  // Skills directories for each target
-  const skillsDirs = [
-    path.join(cwd, ".cursor", "skills"),
-    path.join(cwd, ".claude", "skills"),
-    path.join(cwd, ".codex", "skills"),
-  ];
+  if (fs.existsSync(hooksDir)) {
+    fs.removeSync(hooksDir);
+    if (verbose) log.info(chalk.gray(`  Removed ${hooksDir}`));
+    hasChanges = true;
+  }
 
-  for (const skillsDir of skillsDirs) {
-    if (!fs.existsSync(skillsDir)) {
-      continue;
-    }
-
+  if (fs.existsSync(settingsPath)) {
     try {
-      const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+      const settings: Record<string, unknown> = fs.readJsonSync(settingsPath);
+      const hooks = settings.hooks as Record<string, unknown[]> | undefined;
 
-      for (const entry of entries) {
-        if (!entry.isDirectory()) {
-          continue;
-        }
+      if (hooks) {
+        const userHooks: Record<string, unknown[]> = {};
+        let removedAny = false;
 
-        const skillPath = path.join(skillsDir, entry.name);
-        const metadataPath = path.join(skillPath, ".aicm.json");
-
-        // Only clean skills that have .aicm.json (presence indicates aicm management)
-        if (fs.existsSync(metadataPath)) {
-          fs.removeSync(skillPath);
-          if (verbose) {
-            console.log(chalk.gray(`  Removed skill ${skillPath}`));
+        for (const [eventName, matcherGroups] of Object.entries(hooks)) {
+          if (Array.isArray(matcherGroups)) {
+            const userGroups = matcherGroups.filter((group) => {
+              if (typeof group !== "object" || group === null) return true;
+              const g = group as Record<string, unknown>;
+              if (!Array.isArray(g.hooks)) return true;
+              return !g.hooks.some(
+                (h: unknown) =>
+                  typeof h === "object" &&
+                  h !== null &&
+                  typeof (h as Record<string, unknown>).command === "string" &&
+                  ((h as Record<string, unknown>).command as string).includes(
+                    "hooks/aicm/",
+                  ),
+              );
+            });
+            if (userGroups.length < matcherGroups.length) removedAny = true;
+            if (userGroups.length > 0) userHooks[eventName] = userGroups;
           }
-          cleanedCount++;
         }
-      }
 
-      // Remove the skills directory if it's now empty
-      const remainingEntries = fs.readdirSync(skillsDir);
-      if (remainingEntries.length === 0) {
-        fs.removeSync(skillsDir);
-        if (verbose) {
-          console.log(chalk.gray(`  Removed empty directory ${skillsDir}`));
+        if (removedAny) {
+          if (Object.keys(userHooks).length > 0) {
+            settings.hooks = userHooks;
+          } else {
+            delete settings.hooks;
+          }
+
+          if (Object.keys(settings).length === 0) {
+            fs.removeSync(settingsPath);
+            if (verbose)
+              log.info(chalk.gray(`  Removed empty ${settingsPath}`));
+          } else {
+            fs.writeJsonSync(settingsPath, settings, { spaces: 2 });
+            if (verbose)
+              log.info(chalk.gray(`  Cleaned aicm hooks from ${settingsPath}`));
+          }
+          hasChanges = true;
         }
       }
     } catch {
-      console.warn(
-        chalk.yellow(`Warning: Failed to clean skills in ${skillsDir}`),
-      );
+      log.warn(`Warning: Failed to clean Claude Code settings.json`);
+    }
+  }
+
+  return hasChanges;
+}
+
+function cleanSkills(cwd: string, verbose: boolean): number {
+  let cleanedCount = 0;
+  const skillsDirs = [
+    path.join(cwd, ".agents", "skills"),
+    path.join(cwd, ".cursor", "skills"),
+    path.join(cwd, ".claude", "skills"),
+    path.join(cwd, ".opencode", "skills"),
+  ];
+
+  for (const dir of skillsDirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const skillPath = path.join(dir, entry.name);
+        if (fs.existsSync(path.join(skillPath, ".aicm.json"))) {
+          fs.removeSync(skillPath);
+          if (verbose) log.info(chalk.gray(`  Removed skill ${skillPath}`));
+          cleanedCount++;
+          continue;
+        }
+
+        // LEGACY(v0->v1): clean old namespaced skill layout (<target>/skills/aicm/<skill>/).
+        // Keep this block temporarily so `aicm clean` can remove pre-migration installs.
+        if (
+          entry.name === "aicm" &&
+          !fs.existsSync(path.join(skillPath, "SKILL.md"))
+        ) {
+          const namespacedEntries = fs.readdirSync(skillPath, {
+            withFileTypes: true,
+          });
+          for (const namespacedEntry of namespacedEntries) {
+            if (!namespacedEntry.isDirectory()) continue;
+            const namespacedSkillPath = path.join(
+              skillPath,
+              namespacedEntry.name,
+            );
+            if (fs.existsSync(path.join(namespacedSkillPath, ".aicm.json"))) {
+              fs.removeSync(namespacedSkillPath);
+              if (verbose)
+                log.info(chalk.gray(`  Removed skill ${namespacedSkillPath}`));
+              cleanedCount++;
+            }
+          }
+          if (
+            fs.existsSync(skillPath) &&
+            fs.readdirSync(skillPath).length === 0
+          ) {
+            fs.removeSync(skillPath);
+            if (verbose) log.info(chalk.gray(`  Removed ${skillPath}`));
+          }
+        }
+      }
+      if (fs.readdirSync(dir).length === 0) {
+        fs.removeSync(dir);
+        if (verbose) log.info(chalk.gray(`  Removed empty directory ${dir}`));
+      }
+    } catch {
+      log.warn(`Warning: Failed to clean skills in ${dir}`);
     }
   }
 
   return cleanedCount;
 }
 
-/**
- * Metadata file structure for tracking aicm-managed agents
- */
-interface AgentsAicmMetadata {
-  managedAgents: string[]; // List of agent names (without path or extension)
-}
-
-/**
- * Clean aicm-managed agents from agents directories
- * Only removes agents that are tracked in .aicm.json metadata file
- */
 function cleanAgents(cwd: string, verbose: boolean): number {
   let cleanedCount = 0;
-
-  // Agents directories for each target
   const agentsDirs = [
+    path.join(cwd, ".agents", "agents"),
     path.join(cwd, ".cursor", "agents"),
     path.join(cwd, ".claude", "agents"),
+    path.join(cwd, ".opencode", "agents"),
   ];
 
-  for (const agentsDir of agentsDirs) {
-    const metadataPath = path.join(agentsDir, ".aicm.json");
-
-    if (!fs.existsSync(metadataPath)) {
-      continue;
-    }
+  for (const dir of agentsDirs) {
+    const metadataPath = path.join(dir, ".aicm.json");
+    if (!fs.existsSync(metadataPath)) continue;
 
     try {
-      const metadata: AgentsAicmMetadata = fs.readJsonSync(metadataPath);
-
-      // Remove all managed agents (names only)
+      const metadata = fs.readJsonSync(metadataPath) as {
+        managedAgents?: string[];
+      };
       for (const agentName of metadata.managedAgents || []) {
-        // Skip invalid names containing path separators (security check)
         if (agentName.includes("/") || agentName.includes("\\")) {
-          console.warn(
-            chalk.yellow(
-              `Warning: Skipping invalid agent name "${agentName}" (contains path separator)`,
-            ),
+          log.warn(
+            `Warning: Skipping invalid agent name "${agentName}" (contains path separator)`,
           );
           continue;
         }
-        const fullPath = path.join(agentsDir, agentName + ".md");
+        const fullPath = path.join(dir, agentName + ".md");
         if (fs.existsSync(fullPath)) {
           fs.removeSync(fullPath);
-          if (verbose) {
-            console.log(chalk.gray(`  Removed agent ${fullPath}`));
-          }
+          if (verbose) log.info(chalk.gray(`  Removed agent ${fullPath}`));
           cleanedCount++;
         }
       }
-
-      // Remove the metadata file
       fs.removeSync(metadataPath);
-      if (verbose) {
-        console.log(chalk.gray(`  Removed ${metadataPath}`));
-      }
+      if (verbose) log.info(chalk.gray(`  Removed ${metadataPath}`));
 
-      // Remove the agents directory if it's now empty
-      if (fs.existsSync(agentsDir)) {
-        const remainingEntries = fs.readdirSync(agentsDir);
-        if (remainingEntries.length === 0) {
-          fs.removeSync(agentsDir);
-          if (verbose) {
-            console.log(chalk.gray(`  Removed empty directory ${agentsDir}`));
-          }
-        }
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+        fs.removeSync(dir);
+        if (verbose) log.info(chalk.gray(`  Removed empty directory ${dir}`));
       }
     } catch {
-      console.warn(
-        chalk.yellow(`Warning: Failed to clean agents in ${agentsDir}`),
-      );
+      log.warn(`Warning: Failed to clean agents in ${dir}`);
     }
   }
 
@@ -316,159 +448,116 @@ function cleanAgents(cwd: string, verbose: boolean): number {
 
 function cleanEmptyDirectories(cwd: string, verbose: boolean): number {
   let cleanedCount = 0;
-
   const dirsToCheck = [
-    path.join(cwd, ".cursor", "rules"),
-    path.join(cwd, ".cursor", "commands"),
-    path.join(cwd, ".cursor", "assets"),
     path.join(cwd, ".cursor", "hooks"),
     path.join(cwd, ".cursor", "skills"),
     path.join(cwd, ".cursor", "agents"),
     path.join(cwd, ".cursor"),
+    path.join(cwd, ".agents", "skills"),
+    path.join(cwd, ".agents", "agents"),
+    path.join(cwd, ".agents", "instructions"),
+    path.join(cwd, ".agents"),
+    path.join(cwd, ".claude", "hooks"),
     path.join(cwd, ".claude", "skills"),
     path.join(cwd, ".claude", "agents"),
     path.join(cwd, ".claude"),
-    path.join(cwd, ".codex", "skills"),
+    path.join(cwd, ".opencode", "skills"),
+    path.join(cwd, ".opencode", "agents"),
+    path.join(cwd, ".opencode"),
     path.join(cwd, ".codex"),
   ];
 
   for (const dir of dirsToCheck) {
-    if (fs.existsSync(dir)) {
-      try {
-        const contents = fs.readdirSync(dir);
-        if (contents.length === 0) {
-          fs.removeSync(dir);
-          if (verbose)
-            console.log(chalk.gray(`  Removed empty directory ${dir}`));
-          cleanedCount++;
-        }
-      } catch {
-        // Ignore errors when checking/removing empty directories
+    if (!fs.existsSync(dir)) continue;
+    try {
+      if (fs.readdirSync(dir).length === 0) {
+        fs.removeSync(dir);
+        if (verbose) log.info(chalk.gray(`  Removed empty directory ${dir}`));
+        cleanedCount++;
       }
+    } catch {
+      // ignore
     }
   }
 
   return cleanedCount;
 }
 
-export async function cleanPackage(
-  options: CleanOptions = {},
+async function cleanPackage(
+  cwd: string,
+  verbose: boolean,
 ): Promise<CleanResult> {
-  const cwd = options.cwd || process.cwd();
-  const verbose = options.verbose || false;
-
   return withWorkingDirectory(cwd, async () => {
     let cleanedCount = 0;
 
-    const filesToClean = [
-      path.join(cwd, ".cursor", "rules", "aicm"),
-      path.join(cwd, ".cursor", "commands", "aicm"),
-      path.join(cwd, ".cursor", "assets", "aicm"),
-      path.join(cwd, ".aicm"),
-    ];
+    if (cleanFile(path.join(cwd, ".agents", "instructions"), verbose))
+      cleanedCount++;
 
-    const rulesFilesToClean = [
-      path.join(cwd, ".windsurfrules"),
-      path.join(cwd, "AGENTS.md"),
-      path.join(cwd, "CLAUDE.md"),
-    ];
+    if (cleanInstructionsBlock(path.join(cwd, "AGENTS.md"), verbose))
+      cleanedCount++;
 
-    // Clean directories and files
-    for (const file of filesToClean) {
-      if (cleanFile(file, verbose)) cleanedCount++;
+    // For CLAUDE.md: if it's only the @AGENTS.md pointer created by aicm, remove entirely
+    const claudeMdPath = path.join(cwd, "CLAUDE.md");
+    if (fs.existsSync(claudeMdPath)) {
+      const claudeContent = fs.readFileSync(claudeMdPath, "utf8");
+      if (claudeContent.trim() === "@AGENTS.md") {
+        fs.removeSync(claudeMdPath);
+        if (verbose)
+          log.info(chalk.gray(`  Removed pointer file ${claudeMdPath}`));
+        cleanedCount++;
+      } else if (cleanInstructionsBlock(claudeMdPath, verbose)) {
+        cleanedCount++;
+      }
     }
 
-    // Clean rules blocks from files
-    for (const file of rulesFilesToClean) {
-      if (cleanRulesBlock(file, verbose)) cleanedCount++;
-    }
-
-    // Clean MCP servers
     if (cleanMcpServers(cwd, verbose)) cleanedCount++;
-
-    // Clean hooks
-    if (cleanHooks(cwd, verbose)) cleanedCount++;
-
-    // Clean skills
+    if (cleanOpenCodeMcp(cwd, verbose)) cleanedCount++;
+    if (cleanCodexMcp(cwd, verbose)) cleanedCount++;
+    if (cleanCursorHooks(cwd, verbose)) cleanedCount++;
+    if (cleanClaudeCodeHooks(cwd, verbose)) cleanedCount++;
     cleanedCount += cleanSkills(cwd, verbose);
-
-    // Clean agents
     cleanedCount += cleanAgents(cwd, verbose);
-
-    // Clean empty directories
     cleanedCount += cleanEmptyDirectories(cwd, verbose);
 
-    return {
-      success: true,
-      cleanedCount,
-    };
+    return { success: true, cleanedCount };
   });
 }
 
-export async function cleanWorkspaces(
+async function cleanWorkspaces(
   cwd: string,
-  verbose: boolean = false,
+  verbose: boolean,
 ): Promise<CleanResult> {
-  if (verbose) console.log(chalk.blue("🔍 Discovering packages..."));
-
   const packages = await discoverPackagesWithAicm(cwd);
-
-  if (verbose && packages.length > 0) {
-    console.log(
-      chalk.blue(`Found ${packages.length} packages with aicm configurations.`),
-    );
-  }
-
   let totalCleaned = 0;
 
-  // Clean all discovered packages
   for (const pkg of packages) {
-    if (verbose)
-      console.log(chalk.blue(`Cleaning package: ${pkg.relativePath}`));
-
-    const result = await cleanPackage({
-      cwd: pkg.absolutePath,
-      verbose,
-    });
-
+    if (verbose) log.info(chalk.blue(`Cleaning package: ${pkg.relativePath}`));
+    const result = await cleanPackage(pkg.absolutePath, verbose);
     totalCleaned += result.cleanedCount;
   }
 
-  // Always clean root directory (for merged artifacts like mcp.json and commands)
   const rootPackage = packages.find((p) => p.absolutePath === cwd);
   if (!rootPackage) {
-    if (verbose)
-      console.log(chalk.blue(`Cleaning root workspace artifacts...`));
-    const rootResult = await cleanPackage({ cwd, verbose });
+    const rootResult = await cleanPackage(cwd, verbose);
     totalCleaned += rootResult.cleanedCount;
   }
 
-  return {
-    success: true,
-    cleanedCount: totalCleaned,
-  };
-}
-
-export async function clean(options: CleanOptions = {}): Promise<CleanResult> {
-  const cwd = options.cwd || process.cwd();
-  const verbose = options.verbose || false;
-
-  const shouldUseWorkspaces = await checkWorkspacesEnabled(cwd);
-
-  if (shouldUseWorkspaces) {
-    return cleanWorkspaces(cwd, verbose);
-  }
-
-  return cleanPackage(options);
+  return { success: true, cleanedCount: totalCleaned };
 }
 
 export async function cleanCommand(verbose?: boolean): Promise<void> {
-  const result = await clean({ verbose });
+  const cwd = process.cwd();
+  const v = verbose || false;
+
+  const shouldUseWorkspaces = await checkWorkspacesEnabled(cwd);
+  const result = shouldUseWorkspaces
+    ? await cleanWorkspaces(cwd, v)
+    : await cleanPackage(cwd, v);
 
   if (result.cleanedCount === 0) {
-    console.log("Nothing to clean.");
+    log.info("Nothing to clean.");
   } else {
-    console.log(
+    log.info(
       chalk.green(
         `Successfully cleaned ${result.cleanedCount} file(s)/director(y/ies).`,
       ),

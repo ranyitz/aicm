@@ -192,7 +192,7 @@ describe("hooks installation", () => {
 
     // Should succeed but install 0 hooks
     expect(stdout).toContain(
-      "No rules, commands, hooks, skills, or agents installed",
+      "No instructions, hooks, skills, or agents installed",
     );
   });
 

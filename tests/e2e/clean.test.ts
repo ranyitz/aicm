@@ -13,9 +13,7 @@ test("clean removes installed artifacts", async () => {
   await runCommand("install --ci");
 
   // Verify installed
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "test-rule.mdc")),
-  ).toBe(true);
+  expect(fileExists("AGENTS.md")).toBe(true);
 
   // Run clean
   const { stdout, code } = await runCommand("clean");
@@ -24,9 +22,8 @@ test("clean removes installed artifacts", async () => {
   expect(stdout).toContain("Successfully cleaned");
 
   // Verify removed
-  expect(fileExists(path.join(".cursor", "rules", "aicm"))).toBe(false);
-  expect(fileExists(path.join(".cursor", "commands", "aicm"))).toBe(false);
-  expect(fileExists(path.join(".aicm"))).toBe(false);
+  expect(fileExists("AGENTS.md")).toBe(false);
+  expect(fileExists(path.join(".agents"))).toBe(false);
 
   // Verify MCP cleaned
   const mcpPath = path.join(".cursor", "mcp.json");
@@ -45,9 +42,7 @@ test("clean removes workspace artifacts", async () => {
   await runCommand("install --ci");
 
   // Check artifacts in packages (based on fixture structure)
-  expect(
-    fileExists(path.join("packages", "backend", ".cursor", "rules", "aicm")),
-  ).toBe(true);
+  expect(fileExists(path.join("packages", "backend", "AGENTS.md"))).toBe(true);
   expect(fileExists(path.join(".cursor", "mcp.json"))).toBe(true);
 
   // Clean
@@ -56,9 +51,7 @@ test("clean removes workspace artifacts", async () => {
   expect(code).toBe(0);
 
   // Verify removed in packages
-  expect(
-    fileExists(path.join("packages", "backend", ".cursor", "rules", "aicm")),
-  ).toBe(false);
+  expect(fileExists(path.join("packages", "backend", "AGENTS.md"))).toBe(false);
 
   // Verify root MCP cleaned
   const mcpPath = path.join(".cursor", "mcp.json");
@@ -92,9 +85,7 @@ test("clean removes empty directories and mcp.json", async () => {
   await runCommand("install --ci");
 
   // Verify installed
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "test-rule.mdc")),
-  ).toBe(true);
+  expect(fileExists("AGENTS.md")).toBe(true);
   expect(fileExists(path.join(".cursor", "mcp.json"))).toBe(true);
 
   // Run clean
@@ -103,9 +94,8 @@ test("clean removes empty directories and mcp.json", async () => {
   expect(code).toBe(0);
 
   // Verify everything is removed including empty parent directories
-  expect(fileExists(path.join(".cursor", "rules", "aicm"))).toBe(false);
-  expect(fileExists(path.join(".cursor", "rules"))).toBe(false);
-  expect(fileExists(path.join(".cursor", "commands"))).toBe(false);
+  expect(fileExists("AGENTS.md")).toBe(false);
+  expect(fileExists(path.join(".agents"))).toBe(false);
   expect(fileExists(path.join(".cursor", "mcp.json"))).toBe(false);
   expect(fileExists(path.join(".cursor"))).toBe(false);
 });

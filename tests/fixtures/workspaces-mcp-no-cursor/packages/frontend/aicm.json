@@ -1,6 +1,6 @@
 {
   "rootDir": "./",
-  "targets": ["codex"],
+  "targets": ["claude-code"],
   "mcpServers": {
     "frontend-mcp": {
       "command": "./scripts/frontend.sh"

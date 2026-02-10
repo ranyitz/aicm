@@ -5,7 +5,9 @@
     "aicm-managed-server": {
       "command": "./scripts/aicm-server.sh",
       "args": ["--aicm"],
-      "env": { "AICM_TOKEN": "aicm123" }
+      "env": {
+        "AICM_TOKEN": "aicm123"
+      }
     }
   }
 }

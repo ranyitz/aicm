@@ -1,4 +1,0 @@
-{
-  "presets": ["../shared-preset"],
-  "targets": ["cursor"]
-}

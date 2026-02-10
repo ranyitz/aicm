@@ -16,12 +16,12 @@ interface ExecError extends Error {
 /**
  * The root directory of the project
  */
-export const projectRoot = path.resolve(__dirname, "../../");
+const projectRoot = path.resolve(__dirname, "../../");
 
 /**
  * Temporary test directory for tests
  */
-export const testRootDir = path.join(projectRoot, "tmp-test");
+const testRootDir = path.join(projectRoot, "tmp-test");
 
 /**
  * Current test directory (will be set per test)
@@ -31,7 +31,7 @@ export let testDir = testRootDir;
 /**
  * E2E test fixtures directory for
  */
-export const e2eFixturesDir = path.join(projectRoot, "tests/fixtures");
+const e2eFixturesDir = path.join(projectRoot, "tests/fixtures");
 
 /**
  * Sanitize a filename to be safe for directories
@@ -245,20 +245,6 @@ export function readTestFile(
 }
 
 /**
- * Write a file to the test directory
- */
-export function writeTestFile(
-  filePath: string,
-  content: string,
-  testDirOverride?: string,
-): void {
-  const workingDir = testDirOverride || testDir;
-  const fullPath = path.join(workingDir, filePath);
-  fs.ensureDirSync(path.dirname(fullPath));
-  fs.writeFileSync(fullPath, content);
-}
-
-/**
  * Get the structure of files in the test directory
  */
 export function getDirectoryStructure(
@@ -314,28 +300,4 @@ export async function setupFromFixture(fixtureName: string): Promise<string> {
   await execPromise("git init", { cwd: testDir });
 
   return testDir;
-}
-
-/**
- * Run npm install for a specific package in the test directory
- * @param packageName The npm package to install
- */
-export async function runNpmInstall(
-  packageName: string,
-  testDirOverride?: string,
-): Promise<{ stdout: string; stderr: string; code: number }> {
-  const workingDir = testDirOverride || testDir;
-
-  try {
-    const command = `npm install --no-save ${packageName}`;
-    const { stdout, stderr } = await execPromise(command, { cwd: workingDir });
-    return { stdout, stderr, code: 0 };
-  } catch (error: unknown) {
-    const execError = error as ExecError;
-    return {
-      stdout: execError.stdout || "",
-      stderr: execError.stderr || "",
-      code: execError.code || 1,
-    };
-  }
 }

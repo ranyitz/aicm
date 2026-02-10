@@ -25,7 +25,8 @@
     "lint": "eslint",
     "prepare": "husky install && npx ts-node src/bin/aicm.ts install",
     "version": "auto-changelog -p && git add CHANGELOG.md",
-    "release": "np --no-tests --no-publish"
+    "release": "np --no-tests --no-publish",
+    "knip": "knip"
   },
   "keywords": [
     "ai",
@@ -46,7 +47,8 @@
     "chalk": "^4.1.2",
     "cosmiconfig": "^9.0.0",
     "fast-glob": "^3.3.3",
-    "fs-extra": "^11.1.1"
+    "fs-extra": "^11.1.1",
+    "smol-toml": "^1.6.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.26.0",
@@ -57,6 +59,7 @@
     "eslint": "^9.26.0",
     "husky": "^8.0.3",
     "jest": "^29.7.0",
+    "knip": "^5.82.1",
     "lint-staged": "^15.2.0",
     "np": "^10.2.0",
     "prettier": "^3.1.0",

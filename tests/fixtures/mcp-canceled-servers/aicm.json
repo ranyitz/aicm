@@ -4,7 +4,9 @@
   "mcpServers": {
     "active-server": {
       "command": "./scripts/active-server.sh",
-      "env": { "ACTIVE_TOKEN": "active123" }
+      "env": {
+        "ACTIVE_TOKEN": "active123"
+      }
     }
   }
 }

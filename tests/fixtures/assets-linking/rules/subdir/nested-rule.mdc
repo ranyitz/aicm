@@ -1,8 +1,0 @@
----
-description: nested
-globs: *.ts
----
-# Nested Rule
-
-See [Helper](./helper.json)
-See [Root Example](../example.ts)

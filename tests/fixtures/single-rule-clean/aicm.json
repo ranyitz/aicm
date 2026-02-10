@@ -5,7 +5,9 @@
     "test-mcp": {
       "command": "./scripts/test-mcp.sh",
       "args": ["--test"],
-      "env": { "TEST_TOKEN": "test123" }
+      "env": {
+        "TEST_TOKEN": "test123"
+      }
     }
   }
 }

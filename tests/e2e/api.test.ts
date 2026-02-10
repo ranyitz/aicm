@@ -3,7 +3,7 @@ import fs from "fs-extra";
 import { install } from "../../src/api";
 import { setupFromFixture } from "./helpers";
 
-test("install rules", async () => {
+test("install instructions", async () => {
   const testDir = await setupFromFixture("single-rule");
 
   const result = await install({
@@ -12,22 +12,18 @@ test("install rules", async () => {
   });
 
   expect(result.success).toBe(true);
-  expect(result.installedRuleCount).toBe(1);
-  expect(result.installedCommandCount).toBe(0);
+  expect(result.installedInstructionCount).toBe(1);
+  expect(result.installedSkillCount).toBe(0);
+  expect(result.installedAgentCount).toBe(0);
+  expect(result.installedHookCount).toBe(0);
   expect(result.packagesCount).toBe(1);
 
-  // Check that rule was installed
-  const ruleFile = path.join(
-    testDir,
-    ".cursor",
-    "rules",
-    "aicm",
-    "test-rule.mdc",
-  );
-  expect(fs.existsSync(ruleFile)).toBe(true);
+  // Check that instruction was installed
+  const agentsFile = path.join(testDir, "AGENTS.md");
+  expect(fs.existsSync(agentsFile)).toBe(true);
 
-  const ruleContent = fs.readFileSync(ruleFile, "utf8");
-  expect(ruleContent).toContain("Test Rule");
+  const agentsContent = fs.readFileSync(agentsFile, "utf8");
+  expect(agentsContent).toContain("Test Instruction");
 
   // Check that MCP config was installed
   const mcpFile = path.join(testDir, ".cursor", "mcp.json");
@@ -53,8 +49,10 @@ test("handle missing config", async () => {
   expect(result.success).toBe(false);
   expect(result.error).toBeInstanceOf(Error);
   expect(result.error?.message).toBe("Configuration file not found");
-  expect(result.installedRuleCount).toBe(0);
-  expect(result.installedCommandCount).toBe(0);
+  expect(result.installedInstructionCount).toBe(0);
+  expect(result.installedSkillCount).toBe(0);
+  expect(result.installedAgentCount).toBe(0);
+  expect(result.installedHookCount).toBe(0);
   expect(result.packagesCount).toBe(0);
 });
 
@@ -68,16 +66,12 @@ test("dry run API", async () => {
   });
 
   expect(result.success).toBe(true);
-  expect(result.installedRuleCount).toBe(1);
-  expect(result.installedCommandCount).toBe(0);
+  expect(result.installedInstructionCount).toBe(1);
+  expect(result.installedSkillCount).toBe(0);
+  expect(result.installedAgentCount).toBe(0);
+  expect(result.installedHookCount).toBe(0);
   expect(result.packagesCount).toBe(1);
 
-  const ruleFile = path.join(
-    testDir,
-    ".cursor",
-    "rules",
-    "aicm",
-    "test-rule.mdc",
-  );
-  expect(fs.existsSync(ruleFile)).toBe(false);
+  const agentsFile = path.join(testDir, "AGENTS.md");
+  expect(fs.existsSync(agentsFile)).toBe(false);
 });

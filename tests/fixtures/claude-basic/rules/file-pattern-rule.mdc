@@ -1,9 +1,0 @@
----
-description: "File pattern rule for TypeScript files"
-type: "auto-attached"
-globs: ["*.ts"]
----
-
-- Use strict type checking
-- Prefer interfaces over types for public APIs
-- Use optional chaining and nullish coalescing when appropriate

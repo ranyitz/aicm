@@ -7,23 +7,19 @@ import {
   readTestFile,
 } from "./helpers";
 
-test("single rule", async () => {
+test("single instruction", async () => {
   await setupFromFixture("single-rule");
 
   const { stdout, code } = await runCommand("install --ci");
 
   expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 1 rule");
+  expect(stdout).toContain("Successfully installed 1 instruction");
 
-  // Check that rule was installed
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "test-rule.mdc")),
-  ).toBe(true);
-
-  const ruleContent = readTestFile(
-    path.join(".cursor", "rules", "aicm", "test-rule.mdc"),
-  );
-  expect(ruleContent).toContain("Test Rule");
+  // Check that instructions were installed
+  expect(fileExists("AGENTS.md")).toBe(true);
+  const agentsContent = readTestFile("AGENTS.md");
+  expect(agentsContent).toContain("<!-- AICM:BEGIN -->");
+  expect(agentsContent).toContain("Test Instruction");
 
   // Check that MCP config was installed
   const mcpPath = path.join(".cursor", "mcp.json");
@@ -48,14 +44,14 @@ test("show error when no config file exists", async () => {
   expect(stderr).toMatch(/config|configuration|not found/i);
 });
 
-test("no rules prints message", async () => {
+test("no instructions prints message", async () => {
   await setupFromFixture("empty-rules");
 
   const { stdout, code } = await runCommand("install --ci");
 
   expect(code).toBe(0);
   expect(stdout).toContain(
-    "No rules, commands, hooks, skills, or agents installed",
+    "No instructions, hooks, skills, or agents installed",
   );
 });
 
@@ -66,129 +62,6 @@ test("unknown config keys throw error", async () => {
 
   expect(code).not.toBe(0);
   expect(stderr).toMatch(/Invalid configuration/);
-});
-
-test("handle missing rule files", async () => {
-  await setupFromFixture("missing-rules");
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 2 rules");
-
-  // Check that existing rule was installed
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "existing-rule.mdc")),
-  ).toBe(true);
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "broken-reference.mdc")),
-  ).toBe(true);
-});
-
-test("multiple rules from rootDir", async () => {
-  await setupFromFixture("multiple-rules");
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 3 rules");
-
-  // Check that all rules were installed
-  expect(fileExists(path.join(".cursor", "rules", "aicm", "rule1.mdc"))).toBe(
-    true,
-  );
-  expect(fileExists(path.join(".cursor", "rules", "aicm", "rule2.mdc"))).toBe(
-    true,
-  );
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "subdir", "rule3.mdc")),
-  ).toBe(true);
-
-  // Verify content
-  const rule1Content = readTestFile(
-    path.join(".cursor", "rules", "aicm", "rule1.mdc"),
-  );
-  expect(rule1Content).toContain("Rule 1");
-
-  const rule3Content = readTestFile(
-    path.join(".cursor", "rules", "aicm", "subdir", "rule3.mdc"),
-  );
-  expect(rule3Content).toContain("Rule 3");
-});
-
-test("multiple targets", async () => {
-  await setupFromFixture("multiple-targets");
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 2 rules");
-
-  // Check Cursor installation
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "multi-target-rule.mdc")),
-  ).toBe(true);
-
-  // Check Windsurf installation
-  expect(fileExists(path.join(".aicm", "multi-target-rule.md"))).toBe(true);
-
-  // Check .windsurfrules file
-  const windsurfRulesContent = readTestFile(".windsurfrules");
-  expect(windsurfRulesContent).toContain(".aicm/multi-target-rule.md");
-});
-
-test("clean stale Cursor rules", async () => {
-  await setupFromFixture("cursor-cleanup");
-
-  const staleRulePath = path.join(".cursor", "rules", "aicm", "stale-rule.mdc");
-  const newRulePath = path.join(".cursor", "rules", "aicm", "fresh-rule.mdc");
-
-  // Verify stale rule exists before installation
-  expect(fileExists(staleRulePath)).toBe(true);
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 1 rule");
-
-  // Stale rule should be removed, new rule should exist
-  expect(fileExists(staleRulePath)).toBe(false);
-  expect(fileExists(newRulePath)).toBe(true);
-});
-
-test("clean stale Windsurf rules", async () => {
-  await setupFromFixture("windsurf-cleanup");
-
-  // Verify initial state
-  expect(fileExists(path.join(".aicm", "stale-windsurf-rule.md"))).toBe(true);
-  const oldFreshContent = readTestFile(
-    path.join(".aicm", "fresh-windsurf-rule.md"),
-  );
-  expect(oldFreshContent).toContain("This is OLD fresh Windsurf content");
-
-  let windsurfRulesContent = readTestFile(".windsurfrules");
-  expect(windsurfRulesContent).toContain("- .aicm/stale-windsurf-rule.md");
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 1 rule");
-
-  // Stale rule should be removed
-  expect(fileExists(path.join(".aicm", "stale-windsurf-rule.md"))).toBe(false);
-
-  // Fresh rule should be updated
-  expect(fileExists(path.join(".aicm", "fresh-windsurf-rule.md"))).toBe(true);
-  const freshRuleContent = readTestFile(
-    path.join(".aicm", "fresh-windsurf-rule.md"),
-  );
-  expect(freshRuleContent).toContain("This is fresh Windsurf content.");
-  expect(freshRuleContent).not.toContain("This is OLD fresh Windsurf content");
-
-  // .windsurfrules should be updated
-  windsurfRulesContent = readTestFile(".windsurfrules");
-  expect(windsurfRulesContent).not.toContain("- .aicm/stale-windsurf-rule.md");
-  expect(windsurfRulesContent).toContain("- .aicm/fresh-windsurf-rule.md");
 });
 
 test("preserve existing mcp configuration", async () => {
@@ -205,10 +78,10 @@ test("preserve existing mcp configuration", async () => {
   const { code } = await runCommand("install --ci");
   expect(code).toBe(0);
 
-  // Check that rule was installed
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "test-rule.mdc")),
-  ).toBe(true);
+  // Check that instructions were installed
+  expect(fileExists("AGENTS.md")).toBe(true);
+  const agentsContent = readTestFile("AGENTS.md");
+  expect(agentsContent).toContain("Test Instruction");
 
   // Verify MCP config preservation and addition
   const finalMcpConfig = JSON.parse(readTestFile(mcpPath));
@@ -317,44 +190,16 @@ test("do not install canceled mcp servers", async () => {
   expect(finalMcpConfig.mcpServers["canceled-server"]).toBeUndefined();
 });
 
-test("rules directory with subdirectories", async () => {
-  await setupFromFixture("rule-subdirs");
-
-  const { stdout, code } = await runCommand("install --ci");
-
-  expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 1 rule");
-
-  // Check that rule was installed in subdirectory
-  expect(
-    fileExists(
-      path.join(".cursor", "rules", "aicm", "subdir", "nested-rule.mdc"),
-    ),
-  ).toBe(true);
-
-  const installedContent = readTestFile(
-    path.join(".cursor", "rules", "aicm", "subdir", "nested-rule.mdc"),
-  );
-  expect(installedContent).toContain("Nested Rule Content");
-
-  // Check that directory structure is preserved
-  expect(fileExists(path.join(".cursor", "rules", "aicm", "subdir"))).toBe(
-    true,
-  );
-});
-
 test("no mcp servers", async () => {
   await setupFromFixture("no-mcp");
 
   const { stdout, code } = await runCommand("install --ci");
 
   expect(code).toBe(0);
-  expect(stdout).toContain("Successfully installed 2 rules");
+  expect(stdout).toContain("Successfully installed 1 instruction");
 
-  // Check that rule was installed
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "no-mcp-rule.mdc")),
-  ).toBe(true);
+  // Check that instructions were installed
+  expect(fileExists("AGENTS.md")).toBe(true);
 
   // Check that no MCP config was created
   const mcpPath = path.join(".cursor", "mcp.json");
@@ -369,9 +214,7 @@ test("dry run does not write files", async () => {
   expect(code).toBe(0);
   expect(stdout).toContain("Dry run");
 
-  expect(
-    fileExists(path.join(".cursor", "rules", "aicm", "test-rule.mdc")),
-  ).toBe(false);
+  expect(fileExists("AGENTS.md")).toBe(false);
 
   const mcpPath = path.join(".cursor", "mcp.json");
   expect(fileExists(mcpPath)).toBe(false);
@@ -384,12 +227,12 @@ test("skip installation when skipInstall is true", async () => {
 
   expect(code).toBe(0);
   expect(stdout).toContain(
-    "No rules, commands, hooks, skills, or agents installed",
+    "No instructions, hooks, skills, or agents installed",
   );
 
-  // Check that no rules were installed
-  expect(fileExists(path.join(".cursor", "rules", "aicm"))).toBe(false);
-  expect(fileExists(path.join(".cursor"))).toBe(false);
+  // Check that no instructions were installed
+  expect(fileExists("AGENTS.md")).toBe(false);
+  expect(fileExists(path.join(".agents"))).toBe(false);
 
   // Check that no MCP config was created
   const mcpPath = path.join(".cursor", "mcp.json");
