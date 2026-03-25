@@ -4,6 +4,10 @@
 
 A CLI tool for managing Agentic configurations across projects.
 
+**Deprecated: this project is no longer maintained.**
+
+We ended up using aicm extensively at Wix and decided to build a successor based on the ideas from the `v1` branch. That version writes plugin contents directly into repositories and updates them nightly.
+
 ![aicm](https://github.com/user-attachments/assets/ca38f2d6-ece6-43ad-a127-6f4fce8b2a5a)
 
 ## Table of Contents
